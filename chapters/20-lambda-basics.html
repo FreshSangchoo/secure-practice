@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lambda 기초 - AWS 기초 강의</title>
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index.html" class="header-logo">
+      <span class="aws-icon">AWS</span>
+      <span>기초 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li class="sidebar-section">Lambda 기초</li>
+      <li><a href="#serverless">서버리스란?</a></li>
+      <li><a href="#lambda-concepts">Lambda 핵심 개념</a></li>
+      <li><a href="#execution-model">Lambda 실행 모델</a></li>
+      <li><a href="#config">메모리/타임아웃 설정</a></li>
+      <li><a href="#iam-role">IAM 역할</a></li>
+      <li><a href="#lab">실습</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 20</span>
+      <h1>Lambda 기초</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>서버리스 컴퓨팅의 개념과 장점을 이해한다</li>
+          <li>Lambda의 핵심 개념(함수, 런타임, 핸들러, 이벤트, 컨텍스트)을 설명할 수 있다</li>
+          <li>Lambda의 실행 모델(콜드 스타트, 동시 실행)을 이해한다</li>
+          <li>Lambda 함수를 생성하고 테스트할 수 있다</li>
+          <li>CloudWatch Logs에서 Lambda 실행 로그를 확인할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 1: 서버리스란? -->
+    <section class="content-section" id="serverless">
+      <h2>서버리스란?</h2>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 수도와 전기</div>
+        <p>집에서 수도를 사용할 때를 생각해보세요. 수도관 설치, 정수장 관리를 여러분이 직접 하나요? 아닙니다! 그냥 수도꼭지를 틀면 물이 나오고, <strong>쓴 만큼만 요금</strong>을 냅니다.</p>
+        <p>서버리스도 같습니다. 서버 구매, OS 설치, 패치, 스케일링... 이런 것들을 AWS가 다 해줍니다. 여러분은 <strong>코드만 작성</strong>하면 됩니다. 코드가 실행될 때만 비용이 발생합니다. 아무도 사용하지 않으면 비용도 0원!</p>
+      </div>
+
+      <h3>서버리스 vs 기존 방식 비교</h3>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 자가용 vs 택시</div>
+        <p><strong>EC2 (기존 방식) = 자가용</strong>: 차를 사서, 보험 들고, 주차장 빌리고, 정비도 직접. 사용하든 안 하든 유지비 발생.</p>
+        <p><strong>Lambda (서버리스) = 택시</strong>: 필요할 때만 부르고, 탄 만큼만 요금. 차량 관리는 택시 회사가 알아서.</p>
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>비교 항목</th><th>EC2 (서버 방식)</th><th>Lambda (서버리스)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>서버 관리</td><td>직접 관리 (OS, 패치, 보안)</td><td>AWS가 관리</td></tr>
+          <tr><td>비용 방식</td><td>시간당 과금 (사용 안 해도)</td><td>실행 시간 + 요청 수 과금</td></tr>
+          <tr><td>확장</td><td>Auto Scaling 설정 필요</td><td>자동 확장 (동시 수천 개)</td></tr>
+          <tr><td>실행 시간</td><td>무제한</td><td>최대 15분</td></tr>
+          <tr><td>적합한 작업</td><td>장시간 실행, 복잡한 앱</td><td>짧은 작업, 이벤트 처리</td></tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">핵심: "서버리스"라고 서버가 없는 건 아닙니다</div>
+        <p>서버리스(Serverless)라는 이름이 오해를 부르지만, 실제로 서버는 존재합니다. 다만 <strong>여러분이 서버를 관리할 필요가 없다</strong>는 뜻입니다. AWS가 서버의 프로비저닝, 유지보수, 확장을 모두 자동으로 처리합니다.</p>
+      </div>
+
+      <h3>Lambda가 적합한 ShopEasy 사용 사례</h3>
+      <ul>
+        <li><strong>이미지 처리</strong> - 리뷰 사진이 업로드되면 자동으로 썸네일 생성</li>
+        <li><strong>검색 API</strong> - 가끔 호출되는 검색 기능을 Lambda로 처리</li>
+        <li><strong>주문 알림</strong> - 주문이 들어오면 이메일/SMS 발송</li>
+        <li><strong>데이터 정리</strong> - 매일 밤 만료된 장바구니 데이터 삭제</li>
+      </ul>
+    </section>
+
+    <!-- Section 2: Lambda 핵심 개념 -->
+    <section class="content-section" id="lambda-concepts">
+      <h2>Lambda 핵심 개념</h2>
+
+      <h3>함수 (Function)</h3>
+      <p>Lambda에서 실행되는 코드 단위입니다. 하나의 작업을 수행하는 코드 묶음이라고 생각하면 됩니다.</p>
+
+      <h3>런타임 (Runtime)</h3>
+      <p>Lambda 함수가 실행되는 프로그래밍 언어 환경입니다.</p>
+      <table>
+        <thead>
+          <tr><th>런타임</th><th>지원 언어</th><th>용도</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Node.js 20.x</td><td>JavaScript/TypeScript</td><td>웹 백엔드, API (우리가 사용)</td></tr>
+          <tr><td>Python 3.12</td><td>Python</td><td>데이터 처리, ML</td></tr>
+          <tr><td>Java 21</td><td>Java</td><td>엔터프라이즈 앱</td></tr>
+          <tr><td>Go 1.x</td><td>Go</td><td>고성능 처리</td></tr>
+          <tr><td>.NET 8</td><td>C#</td><td>Windows 앱 마이그레이션</td></tr>
+        </tbody>
+      </table>
+
+      <h3>핸들러 (Handler)</h3>
+      <p>Lambda가 함수를 실행할 때 가장 먼저 호출하는 진입점(entry point) 함수입니다.</p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">javascript</span><button class="copy-btn">복사</button></div>
+        <pre><code>// index.mjs - Lambda 핸들러 예시
+export const handler = async (event, context) => {
+    console.log("받은 이벤트:", JSON.stringify(event));
+
+    const response = {
+        statusCode: 200,
+        body: JSON.stringify({
+            message: "안녕하세요! ShopEasy Lambda입니다.",
+            timestamp: new Date().toISOString()
+        })
+    };
+
+    return response;
+};</code></pre>
+      </div>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 핸들러 = 전화 받는 사람</div>
+        <p>회사에 전화가 오면 교환원이 먼저 받죠? 핸들러가 바로 그 교환원입니다. 누가 어떤 용건으로 전화했는지(event) 확인하고, 적절한 응답을 돌려줍니다.</p>
+      </div>
+
+      <h3>이벤트 (Event)</h3>
+      <p>Lambda 함수를 호출할 때 전달되는 입력 데이터입니다. JSON 형식으로 전달됩니다.</p>
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>// API Gateway에서 전달하는 이벤트 예시
+{
+    "httpMethod": "GET",
+    "path": "/api/products",
+    "queryStringParameters": {
+        "category": "electronics"
+    },
+    "headers": {
+        "Content-Type": "application/json"
+    }
+}</code></pre>
+      </div>
+
+      <p>이벤트는 Lambda를 호출하는 서비스에 따라 형태가 다릅니다:</p>
+      <ul>
+        <li><strong>API Gateway</strong> - HTTP 요청 정보 (메서드, 경로, 헤더, 본문)</li>
+        <li><strong>S3</strong> - 버킷 이름, 파일 이름, 이벤트 유형 (파일 업로드/삭제)</li>
+        <li><strong>SQS</strong> - 큐에서 가져온 메시지 내용</li>
+        <li><strong>CloudWatch Events</strong> - 스케줄 또는 이벤트 정보</li>
+      </ul>
+
+      <h3>컨텍스트 (Context)</h3>
+      <p>Lambda 함수 실행에 대한 메타 정보를 담고 있는 객체입니다.</p>
+      <div class="code-block">
+        <div class="code-header"><span class="lang">javascript</span><button class="copy-btn">복사</button></div>
+        <pre><code>export const handler = async (event, context) => {
+    console.log("함수 이름:", context.functionName);
+    console.log("요청 ID:", context.awsRequestId);
+    console.log("남은 실행 시간(ms):", context.getRemainingTimeInMillis());
+    console.log("메모리 제한(MB):", context.memoryLimitInMB);
+
+    // ... 비즈니스 로직
+};</code></pre>
+      </div>
+    </section>
+
+    <!-- Section 3: Lambda 실행 모델 -->
+    <section class="content-section" id="execution-model">
+      <h2>Lambda 실행 모델</h2>
+
+      <h3>콜드 스타트 (Cold Start)</h3>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 카페 오픈 준비</div>
+        <p>카페가 문을 열 때를 생각해보세요:</p>
+        <ul>
+          <li><strong>콜드 스타트</strong> = 아침에 처음 문 열 때: 에스프레소 머신 예열, 재료 준비, 정리... 첫 손님은 좀 기다려야 합니다 (수백 ms ~ 수 초)</li>
+          <li><strong>웜 스타트</strong> = 이미 영업 중일 때: 바로 커피 제조 가능! 빠릅니다 (수 ms)</li>
+        </ul>
+      </div>
+
+      <p>Lambda 함수가 처음 호출되거나 오래 쉬고 있다가 호출되면, AWS는 실행 환경을 새로 생성합니다. 이때 발생하는 지연을 <strong>콜드 스타트</strong>라고 합니다.</p>
+
+      <div class="diagram">
+        <div class="diagram-title">콜드 스타트 vs 웜 스타트</div>
+        <div style="margin-bottom:1rem;">
+          <div style="font-weight:600; margin-bottom:0.5rem;">[콜드 스타트 과정]</div>
+          <div class="diagram-row">
+            <div class="diagram-box user"><div class="box-title">요청</div></div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box serverless"><div class="box-title">실행 환경 생성</div></div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box serverless"><div class="box-title">코드 다운로드</div></div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box serverless"><div class="box-title">런타임 초기화</div></div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box serverless"><div class="box-title">핸들러 실행</div></div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box user"><div class="box-title">응답</div></div>
+          </div>
+          <div style="text-align:center; font-size:0.85em; color:#888; margin-top:0.25rem;">
+            &larr;&mdash;&mdash; 수백ms ~ 수초 &mdash;&mdash;&rarr;&nbsp;&nbsp;&nbsp;&larr; 수ms &rarr;
+          </div>
+        </div>
+        <div>
+          <div style="font-weight:600; margin-bottom:0.5rem;">[웜 스타트 과정]</div>
+          <div class="diagram-row">
+            <div class="diagram-box user"><div class="box-title">요청</div></div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box serverless" style="opacity:0.5;"><div class="box-title">(이미 준비된 환경)</div></div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box serverless"><div class="box-title">핸들러 실행</div></div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box user"><div class="box-title">응답</div></div>
+          </div>
+          <div style="text-align:center; font-size:0.85em; color:#888; margin-top:0.25rem;">
+            &larr;&mdash; 수ms &mdash;&rarr;
+          </div>
+        </div>
+      </div>
+
+      <h3>콜드 스타트 줄이는 방법</h3>
+      <ul>
+        <li><strong>메모리 늘리기</strong> - 메모리를 늘리면 CPU 성능도 함께 올라가 초기화가 빨라짐</li>
+        <li><strong>패키지 크기 줄이기</strong> - 불필요한 라이브러리 제거</li>
+        <li><strong>핸들러 밖에서 초기화</strong> - DB 연결 등을 핸들러 밖에 두면 재사용됨</li>
+        <li><strong>프로비저닝된 동시성</strong> - 미리 실행 환경을 준비해둠 (추가 비용)</li>
+      </ul>
+
+      <h3>동시 실행 (Concurrency)</h3>
+      <p>Lambda는 요청이 많아지면 자동으로 여러 인스턴스를 실행합니다. EC2처럼 Auto Scaling 설정이 필요 없습니다!</p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 택시 회사</div>
+        <p>손님이 1명이면 택시 1대, 100명이면 택시 100대. 택시 회사(AWS)가 알아서 차를 보내줍니다. 여러분은 택시를 얼마나 준비할지 신경 쓸 필요가 없습니다.</p>
+      </div>
+
+      <ul>
+        <li><strong>기본 동시 실행 한도</strong> - 리전당 1,000개 (요청 시 증가 가능)</li>
+        <li><strong>버스트 동시 실행</strong> - 순간적으로 500~3,000개까지 확장 (리전마다 다름)</li>
+        <li><strong>예약된 동시성</strong> - 특정 함수에 동시 실행 수를 보장 가능</li>
+      </ul>
+    </section>
+
+    <!-- Section 4: 메모리/타임아웃 설정 -->
+    <section class="content-section" id="config">
+      <h2>메모리/타임아웃 설정</h2>
+
+      <h3>메모리 설정</h3>
+      <p>Lambda는 메모리 설정이 곧 성능 설정입니다. 메모리를 늘리면 CPU 성능도 비례하여 올라갑니다.</p>
+      <ul>
+        <li><strong>최소</strong>: 128MB</li>
+        <li><strong>최대</strong>: 10,240MB (10GB)</li>
+        <li><strong>증가 단위</strong>: 1MB</li>
+      </ul>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 자동차 엔진</div>
+        <p>메모리를 늘리는 것은 자동차 엔진 크기를 키우는 것과 같습니다. 1,000cc보다 2,000cc 차가 더 빠르지만, 연비(비용)는 더 나쁘죠. 작업에 맞는 적절한 크기를 찾는 것이 중요합니다.</p>
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>메모리</th><th>CPU</th><th>적합한 작업</th><th>비용 (100ms당)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>128MB</td><td>낮음</td><td>간단한 API 응답</td><td>$0.0000002083</td></tr>
+          <tr><td>512MB</td><td>중간</td><td>일반 API, 데이터 처리</td><td>$0.0000008333</td></tr>
+          <tr><td>1,024MB (1GB)</td><td>1 vCPU</td><td>이미지 처리, 복잡한 연산</td><td>$0.0000016667</td></tr>
+          <tr><td>3,008MB</td><td>2 vCPU</td><td>ML 추론, 대용량 처리</td><td>$0.0000049167</td></tr>
+        </tbody>
+      </table>
+
+      <h3>타임아웃 설정</h3>
+      <ul>
+        <li><strong>기본</strong>: 3초</li>
+        <li><strong>최대</strong>: 900초 (15분)</li>
+        <li>타임아웃 초과 시 함수가 강제 종료됩니다</li>
+      </ul>
+
+      <div class="info-box warning">
+        <div class="info-box-title">주의: 적절한 타임아웃 설정</div>
+        <p>타임아웃을 너무 길게 설정하면, 오류가 발생해도 오래 실행되어 비용이 증가합니다. 예상 실행 시간의 2~3배 정도로 설정하는 것이 좋습니다. 예: 보통 2초에 끝나는 함수 → 타임아웃 6~10초.</p>
+      </div>
+    </section>
+
+    <!-- Section 5: IAM 역할 -->
+    <section class="content-section" id="iam-role">
+      <h2>IAM 역할</h2>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 사원증</div>
+        <p>회사에서 새 직원(Lambda 함수)이 입사하면 사원증(IAM 역할)을 발급받습니다. 이 사원증에 따라 서버실(S3)에 들어갈 수 있는지, 회의실(DynamoDB)을 예약할 수 있는지가 결정됩니다.</p>
+      </div>
+
+      <p>Lambda 함수가 다른 AWS 서비스에 접근하려면 IAM 역할이 필요합니다. Lambda 함수를 생성하면 자동으로 <strong>실행 역할(Execution Role)</strong>이 생성됩니다.</p>
+
+      <h3>기본 실행 역할 권한</h3>
+      <p>Lambda가 기본으로 받는 권한은 CloudWatch Logs에 로그를 기록하는 권한뿐입니다:</p>
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+            ],
+            "Resource": "arn:aws:logs:*:*:*"
+        }
+    ]
+}</code></pre>
+      </div>
+
+      <h3>추가 권한이 필요한 경우</h3>
+      <table>
+        <thead>
+          <tr><th>Lambda가 하는 일</th><th>필요한 권한</th><th>AWS 관리형 정책</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>S3 파일 읽기/쓰기</td><td>s3:GetObject, s3:PutObject</td><td>AmazonS3FullAccess</td></tr>
+          <tr><td>DynamoDB 조회/쓰기</td><td>dynamodb:Query, dynamodb:PutItem</td><td>AmazonDynamoDBFullAccess</td></tr>
+          <tr><td>SQS 메시지 처리</td><td>sqs:ReceiveMessage, sqs:DeleteMessage</td><td>AWSLambdaSQSQueueExecutionRole</td></tr>
+          <tr><td>SNS 메시지 발행</td><td>sns:Publish</td><td>AmazonSNSFullAccess</td></tr>
+        </tbody>
+      </table>
+
+      <div class="info-box tip">
+        <div class="info-box-title">Tip: 최소 권한 원칙</div>
+        <p>실습에서는 편의상 <code>FullAccess</code> 정책을 사용하지만, 실무에서는 필요한 최소한의 권한만 부여하세요. 예: <code>AmazonS3FullAccess</code> 대신 특정 버킷에만 접근 가능한 커스텀 정책 사용.</p>
+      </div>
+    </section>
+
+    <!-- Lab Section -->
+    <section class="content-section" id="lab">
+      <h2>실습</h2>
+
+      <div class="info-box danger">
+        <div class="info-box-title">비용 안내</div>
+        <p>Lambda 프리티어는 매월 100만 건의 요청과 40만 GB-초의 컴퓨팅 시간이 무료입니다. 이 실습은 프리티어 범위 내에서 충분히 수행할 수 있습니다.</p>
+      </div>
+
+      <div class="lab-section">
+        <div class="lab-title">실습: 첫 번째 Lambda 함수 만들기</div>
+        <ol class="steps">
+
+          <!-- Step 1 -->
+          <li class="step">
+            <div class="step-title">Lambda 콘솔로 이동</div>
+            <p>AWS 콘솔에서 <strong>Lambda</strong> 서비스를 검색하여 이동합니다.</p>
+            <p><strong>함수 생성(Create function)</strong> 버튼을 클릭합니다.</p>
+            <div class="screenshot-placeholder">Lambda 콘솔 메인 화면 - 함수 생성 버튼</div>
+          </li>
+
+          <!-- Step 2 -->
+          <li class="step">
+            <div class="step-title">Lambda 함수 생성</div>
+            <p>다음과 같이 설정합니다:</p>
+            <ul>
+              <li><strong>선택</strong>: <code>Author from scratch</code> (처음부터 작성)</li>
+              <li><strong>Function name</strong>: <code>shopeasy-hello</code></li>
+              <li><strong>Runtime</strong>: <code>Node.js 20.x</code></li>
+              <li><strong>Architecture</strong>: <code>arm64</code> (x86_64보다 비용 효율적)</li>
+            </ul>
+            <p><strong>Permissions</strong> 섹션에서:</p>
+            <ul>
+              <li><strong>Execution role</strong>: <code>Create a new role with basic Lambda permissions</code></li>
+            </ul>
+            <p><strong>Create function</strong> 버튼을 클릭합니다.</p>
+            <div class="screenshot-placeholder">Lambda 함수 생성 설정 화면</div>
+          </li>
+
+          <!-- Step 3 -->
+          <li class="step">
+            <div class="step-title">핸들러 코드 작성</div>
+            <p>함수가 생성되면 코드 편집기가 표시됩니다. <code>index.mjs</code> 파일의 내용을 다음으로 교체합니다:</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">javascript</span><button class="copy-btn">복사</button></div>
+              <pre><code>export const handler = async (event, context) => {
+    // 1. 받은 이벤트 정보 출력 (로그)
+    console.log("=== Lambda 함수 실행 시작 ===");
+    console.log("이벤트:", JSON.stringify(event, null, 2));
+    console.log("함수 이름:", context.functionName);
+    console.log("요청 ID:", context.awsRequestId);
+    console.log("남은 시간(ms):", context.getRemainingTimeInMillis());
+
+    // 2. 이벤트에서 이름 가져오기 (없으면 기본값)
+    const name = event.name || "ShopEasy 방문자";
+
+    // 3. 현재 시간
+    const now = new Date().toLocaleString("ko-KR", {
+        timeZone: "Asia/Seoul"
+    });
+
+    // 4. 응답 반환
+    const response = {
+        statusCode: 200,
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            message: `안녕하세요, ${name}님! ShopEasy에 오신 것을 환영합니다!`,
+            serverTime: now,
+            functionName: context.functionName,
+            requestId: context.awsRequestId,
+            memoryLimit: context.memoryLimitInMB + "MB"
+        }, null, 2)
+    };
+
+    console.log("=== Lambda 함수 실행 완료 ===");
+    return response;
+};</code></pre>
+            </div>
+            <p>코드를 붙여넣은 후 <strong>Deploy</strong> 버튼을 클릭하여 저장합니다.</p>
+            <div class="screenshot-placeholder">Lambda 코드 편집기 - Deploy 버튼 클릭</div>
+          </li>
+
+          <!-- Step 4 -->
+          <li class="step">
+            <div class="step-title">테스트 이벤트 생성 및 실행</div>
+            <p><strong>Test</strong> 탭을 클릭하거나, 상단의 <strong>Test</strong> 버튼을 클릭합니다.</p>
+            <p><strong>Create new event</strong>를 선택하고 다음과 같이 설정합니다:</p>
+            <ul>
+              <li><strong>Event name</strong>: <code>testEvent1</code></li>
+              <li><strong>Event sharing settings</strong>: <code>Private</code></li>
+            </ul>
+            <p>이벤트 JSON을 다음으로 변경합니다:</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+              <pre><code>{
+    "name": "김수강"
+}</code></pre>
+            </div>
+            <p><strong>Save</strong>를 클릭한 후, <strong>Test</strong> 버튼을 클릭하여 실행합니다.</p>
+            <div class="screenshot-placeholder">테스트 이벤트 설정 화면</div>
+
+            <p>실행 결과를 확인합니다:</p>
+            <ul>
+              <li><strong>Execution result: succeeded</strong> - 성공 여부</li>
+              <li><strong>Response</strong> - 함수가 반환한 응답</li>
+              <li><strong>Function Logs</strong> - console.log 출력</li>
+              <li><strong>Duration</strong> - 실행 시간</li>
+              <li><strong>Billed Duration</strong> - 과금 시간 (1ms 단위)</li>
+              <li><strong>Memory Size / Max Memory Used</strong> - 메모리 설정 / 실제 사용량</li>
+            </ul>
+            <div class="screenshot-placeholder">Lambda 테스트 실행 결과 화면</div>
+          </li>
+
+          <!-- Step 5 -->
+          <li class="step">
+            <div class="step-title">이름 없이 테스트 (기본값 확인)</div>
+            <p>이번에는 이름 없이 빈 이벤트로 테스트해봅니다. 새 테스트 이벤트를 만듭니다:</p>
+            <ul>
+              <li><strong>Event name</strong>: <code>testEvent2</code></li>
+            </ul>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+              <pre><code>{}</code></pre>
+            </div>
+            <p><strong>Test</strong>를 클릭합니다. 응답에서 <code>"ShopEasy 방문자"</code>가 기본값으로 사용되는 것을 확인합니다.</p>
+          </li>
+
+          <!-- Step 6 -->
+          <li class="step">
+            <div class="step-title">환경변수 설정</div>
+            <p>코드에 직접 값을 넣는 대신 환경변수를 사용하는 것이 좋습니다.</p>
+            <p><strong>Configuration</strong> 탭 > <strong>Environment variables</strong>를 클릭합니다.</p>
+            <p><strong>Edit</strong>를 클릭하고 다음 환경변수를 추가합니다:</p>
+            <table>
+              <thead><tr><th>Key</th><th>Value</th></tr></thead>
+              <tbody>
+                <tr><td><code>SHOP_NAME</code></td><td><code>ShopEasy</code></td></tr>
+                <tr><td><code>ENVIRONMENT</code></td><td><code>development</code></td></tr>
+                <tr><td><code>GREETING_MESSAGE</code></td><td><code>즐거운 쇼핑 되세요!</code></td></tr>
+              </tbody>
+            </table>
+            <p><strong>Save</strong>를 클릭합니다.</p>
+            <div class="screenshot-placeholder">환경변수 설정 화면</div>
+
+            <p>코드를 업데이트하여 환경변수를 사용하도록 합니다:</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">javascript</span><button class="copy-btn">복사</button></div>
+              <pre><code>export const handler = async (event, context) => {
+    // 환경변수 사용
+    const shopName = process.env.SHOP_NAME || "Shop";
+    const environment = process.env.ENVIRONMENT || "production";
+    const greeting = process.env.GREETING_MESSAGE || "환영합니다!";
+
+    console.log(`[${environment}] ${shopName} Lambda 실행`);
+
+    const name = event.name || "방문자";
+
+    const response = {
+        statusCode: 200,
+        body: JSON.stringify({
+            shop: shopName,
+            environment: environment,
+            message: `${name}님, ${greeting}`,
+            timestamp: new Date().toISOString()
+        }, null, 2)
+    };
+
+    return response;
+};</code></pre>
+            </div>
+            <p><strong>Deploy</strong>를 클릭한 후 다시 <strong>Test</strong>를 실행합니다. 환경변수 값이 응답에 포함되는 것을 확인합니다.</p>
+          </li>
+
+          <!-- Step 7 -->
+          <li class="step">
+            <div class="step-title">CloudWatch Logs에서 실행 로그 확인</div>
+            <p><strong>Monitor</strong> 탭을 클릭하면 Lambda 함수의 실행 지표를 볼 수 있습니다.</p>
+            <p><strong>View CloudWatch logs</strong> 버튼을 클릭하면 CloudWatch Logs 콘솔로 이동합니다.</p>
+            <p>또는 직접 CloudWatch 콘솔로 이동합니다:</p>
+            <ul>
+              <li><strong>CloudWatch</strong> > <strong>Logs</strong> > <strong>Log groups</strong></li>
+              <li><code>/aws/lambda/shopeasy-hello</code> 로그 그룹을 클릭</li>
+              <li>가장 최근 로그 스트림을 클릭</li>
+            </ul>
+            <p>console.log로 출력한 모든 내용이 여기에 기록됩니다:</p>
+            <ul>
+              <li>함수 시작/종료 메시지</li>
+              <li>이벤트 데이터</li>
+              <li>실행 시간, 메모리 사용량</li>
+            </ul>
+            <div class="screenshot-placeholder">CloudWatch Logs - Lambda 실행 로그 화면</div>
+
+            <div class="info-box tip">
+              <div class="info-box-title">Tip: 로그는 디버깅의 핵심</div>
+              <p>Lambda에는 SSH 접속이 불가능하므로, <code>console.log()</code>로 출력한 로그가 디버깅의 유일한 수단입니다. 중요한 변수 값, 에러 정보를 충분히 로깅하는 습관을 들이세요.</p>
+            </div>
+          </li>
+
+          <!-- Step 8 -->
+          <li class="step">
+            <div class="step-title">메모리/타임아웃 조정 실험</div>
+            <p><strong>Configuration</strong> 탭 > <strong>General configuration</strong> > <strong>Edit</strong>을 클릭합니다.</p>
+            <p>먼저 현재 설정을 확인합니다:</p>
+            <ul>
+              <li>Memory: 128MB (기본값)</li>
+              <li>Timeout: 3초 (기본값)</li>
+            </ul>
+
+            <h4>실험 1: 타임아웃을 1초로 줄이기</h4>
+            <p>Timeout을 <code>1초</code>로 변경하고 <strong>Save</strong>합니다.</p>
+            <p>코드에 인위적인 지연을 추가합니다:</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">javascript</span><button class="copy-btn">복사</button></div>
+              <pre><code>export const handler = async (event, context) => {
+    console.log("시작! 남은 시간:", context.getRemainingTimeInMillis(), "ms");
+
+    // 2초 대기 (타임아웃 1초보다 김!)
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    console.log("이 메시지는 출력되지 않습니다 (타임아웃!)");
+
+    return {
+        statusCode: 200,
+        body: JSON.stringify({ message: "완료!" })
+    };
+};</code></pre>
+            </div>
+            <p><strong>Deploy</strong> 후 <strong>Test</strong>를 실행합니다. <strong>Task timed out</strong> 에러가 발생하는 것을 확인합니다.</p>
+            <div class="screenshot-placeholder">타임아웃 에러 발생 화면</div>
+
+            <h4>실험 2: 메모리 변경</h4>
+            <p>타임아웃을 다시 <code>10초</code>로 늘리고, 지연 코드를 제거합니다.</p>
+            <p>메모리를 <code>128MB → 256MB → 512MB</code>로 바꿔가며 테스트합니다. 각 실행 결과의 <strong>Duration</strong>과 <strong>Max Memory Used</strong>를 비교합니다.</p>
+
+            <div class="info-box concept">
+              <div class="info-box-title">관찰 포인트</div>
+              <p>간단한 함수에서는 메모리 차이가 크지 않지만, 이미지 처리나 데이터 변환 같은 무거운 작업에서는 메모리(= CPU) 증가에 따라 실행 시간이 크게 줄어듭니다. 비용은 "메모리 x 실행 시간"이므로, 메모리를 늘려 실행 시간이 줄면 오히려 비용이 같거나 줄어들 수 있습니다.</p>
+            </div>
+
+            <p>실험이 끝나면 메모리를 <code>256MB</code>, 타임아웃을 <code>10초</code>로 설정하고 저장합니다.</p>
+          </li>
+
+          <!-- Step 9 -->
+          <li class="step">
+            <div class="step-title">최종 코드 복원</div>
+            <p>실험이 끝났으므로, 코드를 깔끔한 버전으로 복원합니다:</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">javascript</span><button class="copy-btn">복사</button></div>
+              <pre><code>export const handler = async (event, context) => {
+    const shopName = process.env.SHOP_NAME || "Shop";
+    const environment = process.env.ENVIRONMENT || "production";
+    const greeting = process.env.GREETING_MESSAGE || "환영합니다!";
+
+    console.log(`[${environment}] ${shopName} Lambda 실행 - 요청ID: ${context.awsRequestId}`);
+
+    const name = event.name || "방문자";
+
+    return {
+        statusCode: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            shop: shopName,
+            environment: environment,
+            message: `${name}님, ${greeting}`,
+            timestamp: new Date().toISOString(),
+            requestId: context.awsRequestId
+        }, null, 2)
+    };
+};</code></pre>
+            </div>
+            <p><strong>Deploy</strong>를 클릭하여 저장합니다.</p>
+          </li>
+
+        </ol>
+      </div>
+
+      <div class="info-box concept">
+        <div class="info-box-title">정리: Lambda 핵심 요약</div>
+        <ul>
+          <li><strong>서버리스</strong> - 서버 관리 없이 코드만 작성, 실행 시간만큼만 비용</li>
+          <li><strong>핸들러</strong> - Lambda가 호출하는 진입점 함수 (event, context 파라미터)</li>
+          <li><strong>이벤트</strong> - 함수에 전달되는 입력 데이터 (호출 소스에 따라 형태가 다름)</li>
+          <li><strong>메모리 = 성능</strong> - 메모리를 올리면 CPU도 올라감</li>
+          <li><strong>IAM 역할</strong> - Lambda가 다른 AWS 서비스에 접근하기 위한 권한</li>
+          <li><strong>CloudWatch Logs</strong> - Lambda 실행 로그 확인 필수</li>
+        </ul>
+      </div>
+    </section>
+
+    <div class="chapter-nav">
+      <a href="19-cloudfront.html" class="prev">이전: CloudFront</a>
+      <a href="21-lambda-image-resize.html" class="next">다음: S3 + Lambda 이미지 처리</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+</html>

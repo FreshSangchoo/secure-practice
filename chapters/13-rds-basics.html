@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RDS 기초 - AWS 기초 강의</title>
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index.html" class="header-logo">
+      <span class="aws-icon">AWS</span>
+      <span>기초 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li><a href="#db-on-ec2">EC2에 DB 직접 설치하면?</a></li>
+      <li><a href="#what-is-rds">RDS란?</a></li>
+      <li><a href="#engines">지원 엔진</a></li>
+      <li><a href="#multi-az">다중 AZ</a></li>
+      <li><a href="#read-replica">읽기 복제본</a></li>
+      <li><a href="#subnet-group">DB 서브넷 그룹</a></li>
+      <li><a href="#lab">실습</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 13</span>
+      <h1>RDS 기초</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>EC2에 DB를 직접 설치하는 것과 RDS의 차이를 이해한다</li>
+          <li>RDS의 주요 기능(다중 AZ, 읽기 복제본)을 파악한다</li>
+          <li>DB 서브넷 그룹과 보안 설정을 이해한다</li>
+          <li>RDS MySQL 인스턴스를 생성하고 접속을 확인한다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 1: EC2에 DB 직접 설치하면? -->
+    <section class="content-section" id="db-on-ec2">
+      <h2>EC2에 데이터베이스를 직접 설치하면?</h2>
+
+      <p>현재 ShopEasy API 서버는 SQLite를 사용하고 있습니다. SQLite는 파일 기반 DB라 간단하지만, 실서비스에서는 MySQL이나 PostgreSQL 같은 RDBMS가 필요합니다. EC2에 직접 MySQL을 설치해서 운영할 수도 있지만, 여러 문제가 있습니다.</p>
+
+      <h3>EC2에 직접 설치하면 해야 할 일들</h3>
+      <ul>
+        <li><strong>설치</strong>: MySQL 서버 설치, 설정 파일 최적화</li>
+        <li><strong>백업</strong>: 매일 백업 스크립트 작성, 백업 파일 관리</li>
+        <li><strong>업데이트</strong>: 보안 패치 적용, 버전 업그레이드</li>
+        <li><strong>모니터링</strong>: CPU, 메모리, 디스크 모니터링 설정</li>
+        <li><strong>장애 대응</strong>: 서버 다운 시 직접 복구</li>
+        <li><strong>확장</strong>: 스토리지 부족 시 디스크 확장 작업</li>
+        <li><strong>복제</strong>: 읽기 성능을 위한 복제 서버 구성</li>
+      </ul>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유로 이해하기: 집 관리</div>
+        <p>EC2에 DB를 직접 설치하는 것은 <strong>단독주택</strong>에 사는 것과 같습니다. 보일러 고장, 수도 누수, 지붕 수리... 전부 본인이 해야 합니다. 반면 RDS는 <strong>관리형 아파트</strong>에 사는 것과 같죠. 관리비만 내면 관리사무소에서 시설 관리, 보안, 청소를 다 해줍니다. 우리는 그냥 편하게 살기만 하면 됩니다!</p>
+      </div>
+    </section>
+
+    <!-- Section 2: RDS란? -->
+    <section class="content-section" id="what-is-rds">
+      <h2>RDS란?</h2>
+
+      <p><strong>RDS(Relational Database Service)</strong>는 AWS가 제공하는 <strong>관리형 관계형 데이터베이스</strong> 서비스입니다. AWS가 DB 서버의 설치, 패치, 백업, 복구, 확장을 모두 관리해줍니다.</p>
+
+      <h3>RDS가 관리해주는 것 vs 우리가 할 일</h3>
+      <table>
+        <thead>
+          <tr><th>AWS가 관리</th><th>우리가 할 일</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>OS 및 DB 설치/패치</td><td>DB 스키마(테이블) 설계</td></tr>
+          <tr><td>자동 백업/복원</td><td>데이터 입력/조회 (SQL)</td></tr>
+          <tr><td>다중 AZ 장애 조치</td><td>인스턴스 타입/크기 선택</td></tr>
+          <tr><td>하드웨어 교체</td><td>보안그룹 설정</td></tr>
+          <tr><td>모니터링/경보</td><td>파라미터 그룹 튜닝 (선택)</td></tr>
+          <tr><td>스토리지 자동 확장</td><td>애플리케이션 연동 코드</td></tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">핵심 개념: 관리형 서비스 (Managed Service)</div>
+        <p>RDS는 AWS의 대표적인 "관리형 서비스"입니다. 인프라 관리를 AWS에 맡기고, 우리는 비즈니스 로직(데이터 설계, 쿼리 작성)에 집중할 수 있습니다. DB 전문 관리자(DBA)가 없는 팀에서도 안정적인 DB를 운영할 수 있죠.</p>
+      </div>
+    </section>
+
+    <!-- Section 3: 지원 엔진 -->
+    <section class="content-section" id="engines">
+      <h2>RDS 지원 엔진</h2>
+
+      <table>
+        <thead>
+          <tr><th>엔진</th><th>특징</th><th>적합한 경우</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>MySQL</strong></td><td>가장 대중적, 프리티어 사용 가능</td><td>일반적인 웹 앱 (우리가 사용!)</td></tr>
+          <tr><td><strong>PostgreSQL</strong></td><td>기능 풍부, 복잡한 쿼리에 강함</td><td>데이터 분석, GIS</td></tr>
+          <tr><td><strong>MariaDB</strong></td><td>MySQL 포크, 오픈소스</td><td>MySQL 대안</td></tr>
+          <tr><td><strong>Oracle</strong></td><td>엔터프라이즈급 기능</td><td>대기업, 금융</td></tr>
+          <tr><td><strong>SQL Server</strong></td><td>Microsoft 생태계</td><td>.NET 기반 앱</td></tr>
+          <tr><td><strong>Aurora</strong></td><td>AWS 자체 개발, 고성능</td><td>대규모 서비스</td></tr>
+        </tbody>
+      </table>
+
+      <div class="info-box tip">
+        <div class="info-box-title">우리 실습에서는?</div>
+        <p>ShopEasy는 <strong>MySQL</strong>을 사용합니다. 가장 대중적이고, 프리티어(db.t3.micro, 12개월 무료)를 사용할 수 있으며, Node.js와의 호환성도 좋습니다.</p>
+      </div>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유로 이해하기: Aurora</div>
+        <p>Aurora는 AWS가 직접 만든 "프리미엄 DB 엔진"입니다. MySQL/PostgreSQL과 호환되면서 성능은 5배 빠르다고 합니다. 마치 같은 연료(SQL)를 쓰는데 엔진이 튜닝된 <strong>스포츠카</strong>와 같죠. 다만 비용이 더 들기 때문에 학습에서는 일반 MySQL을 사용합니다.</p>
+      </div>
+    </section>
+
+    <!-- Section 4: 다중 AZ -->
+    <section class="content-section" id="multi-az">
+      <h2>다중 AZ (Multi-AZ)</h2>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유로 이해하기: 비상용 발전기</div>
+        <p>건물에 정전이 발생하면 <strong>비상용 발전기</strong>가 자동으로 켜져서 전력을 공급합니다. 입주자는 정전이 났는지도 모르죠. 다중 AZ도 마찬가지입니다. 주(Primary) DB가 있는 데이터센터(AZ)에 장애가 발생하면, 대기(Standby) DB가 자동으로 <strong>즉시 대체</strong>합니다. 애플리케이션 코드를 수정할 필요 없이요!</p>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">다중 AZ (Multi-AZ) 구조</div>
+        <div class="diagram-row">
+          <div class="diagram-box compute"><div class="box-title">애플리케이션</div></div>
+        </div>
+        <div class="diagram-arrow down">↓</div>
+        <div class="diagram-row">
+          <div class="diagram-box network"><div class="box-title">RDS 엔드포인트</div><div class="box-sub">이 주소는 변하지 않음</div></div>
+        </div>
+        <div class="diagram-arrow down">↓</div>
+        <div class="diagram-row">
+          <div class="diagram-box database">
+            <div class="box-title">Primary DB</div>
+            <div class="box-sub">(AZ-a)<br>읽기/쓰기</div>
+          </div>
+          <div class="diagram-arrow">⇄ 동기 복제</div>
+          <div class="diagram-box database" style="opacity:0.7">
+            <div class="box-title">Standby DB</div>
+            <div class="box-sub">(AZ-c)<br>동기 복제 대기</div>
+          </div>
+        </div>
+        <div style="text-align:center; padding:0.5rem; color:var(--text-secondary); font-size:0.85rem;">
+          ※ Primary 장애 시 → Standby가 자동으로 Primary 승격<br>
+          ※ 엔드포인트는 그대로 → 앱은 변경 없음
+        </div>
+      </div>
+
+      <h3>다중 AZ의 특징</h3>
+      <ul>
+        <li><strong>자동 장애 조치</strong>: Primary 장애 시 1~2분 내 Standby로 자동 전환</li>
+        <li><strong>동기 복제</strong>: Primary에 쓴 데이터가 즉시 Standby에 복제</li>
+        <li><strong>엔드포인트 유지</strong>: DNS가 자동으로 새 Primary를 가리킴</li>
+        <li><strong>Standby는 읽기 불가</strong>: 오직 장애 조치용 (읽기 분산은 읽기 복제본 사용)</li>
+      </ul>
+
+      <div class="info-box danger">
+        <div class="info-box-title">비용 주의: 다중 AZ</div>
+        <p>다중 AZ는 DB 인스턴스가 2대 운영되므로 <strong>비용이 약 2배</strong>입니다. 학습 환경에서는 비용 절약을 위해 <strong>단일 AZ</strong>로 생성합니다. 프로덕션에서는 반드시 다중 AZ를 권장합니다.</p>
+      </div>
+    </section>
+
+    <!-- Section 5: 읽기 복제본 -->
+    <section class="content-section" id="read-replica">
+      <h2>읽기 복제본 (Read Replica)</h2>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유로 이해하기: 도서관 열람실 확장</div>
+        <p>도서관에 책(데이터)은 1권(원본)만 있는데, 읽으려는 학생(읽기 요청)이 너무 많습니다. 해결책은? 원본 책을 <strong>복사해서 열람실을 여러 개</strong> 만드는 겁니다. 학생들은 가까운 열람실에서 복사본을 읽으면 됩니다. 새 내용이 추가되면 원본에서 복사본으로 자동 업데이트됩니다.</p>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">읽기 복제본 (Read Replica)</div>
+        <div class="diagram-row">
+          <div class="diagram-box compute"><div class="box-title">애플리케이션</div></div>
+        </div>
+        <div class="diagram-arrow down">↓</div>
+        <div class="diagram-row">
+          <div class="diagram-col" style="flex:1; align-items:center;">
+            <div style="text-align:center; font-weight:600; padding:0.3rem; font-size:0.85rem;">쓰기 (INSERT/UPDATE)</div>
+            <div class="diagram-arrow down">↓</div>
+            <div class="diagram-box database"><div class="box-title">Primary DB</div><div class="box-sub">쓰기 + 읽기</div></div>
+          </div>
+          <div class="diagram-arrow">→ 비동기 복제 →</div>
+          <div class="diagram-col" style="flex:1; align-items:center;">
+            <div style="text-align:center; font-weight:600; padding:0.3rem; font-size:0.85rem;">읽기 (SELECT)</div>
+            <div class="diagram-arrow down">↓</div>
+            <div class="diagram-box database"><div class="box-title">읽기 복제본</div><div class="box-sub">읽기 전용</div></div>
+          </div>
+        </div>
+      </div>
+
+      <h3>다중 AZ vs 읽기 복제본</h3>
+      <table>
+        <thead>
+          <tr><th>구분</th><th>다중 AZ</th><th>읽기 복제본</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>목적</strong></td><td>장애 대비 (가용성)</td><td>읽기 성능 향상</td></tr>
+          <tr><td><strong>복제 방식</strong></td><td>동기 복제</td><td>비동기 복제</td></tr>
+          <tr><td><strong>읽기 가능?</strong></td><td>불가 (대기 전용)</td><td>가능 (읽기 전용)</td></tr>
+          <tr><td><strong>장애 시</strong></td><td>자동 전환</td><td>수동 승격 필요</td></tr>
+          <tr><td><strong>리전</strong></td><td>같은 리전</td><td>다른 리전도 가능</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Section 6: DB 서브넷 그룹 -->
+    <section class="content-section" id="subnet-group">
+      <h2>DB 서브넷 그룹</h2>
+
+      <p>RDS 인스턴스를 생성하려면 먼저 <strong>DB 서브넷 그룹</strong>을 만들어야 합니다. 이는 "RDS가 사용할 수 있는 서브넷 목록"입니다.</p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유로 이해하기</div>
+        <p>DB 서브넷 그룹은 "이 아파트 단지(VPC) 안에서 DB가 입주할 수 있는 동(서브넷) 목록"입니다. AWS는 이 목록 중에서 자동으로 적절한 동을 선택하여 DB를 배치합니다. 다중 AZ 사용 시에는 서로 다른 동에 하나씩 배치하여 한 동에 문제가 생겨도 다른 동에서 서비스를 유지합니다.</p>
+      </div>
+
+      <h3>DB 서브넷 그룹 요구사항</h3>
+      <ul>
+        <li><strong>최소 2개 AZ</strong>의 서브넷이 포함되어야 합니다</li>
+        <li><strong>프라이빗 서브넷</strong>을 사용합니다 (DB는 인터넷에서 직접 접근 불가)</li>
+        <li>같은 VPC의 서브넷이어야 합니다</li>
+      </ul>
+
+      <div class="info-box warning">
+        <div class="info-box-title">프라이빗 서브넷이 2개 AZ에 필요합니다</div>
+        <p>VPC에 프라이빗 서브넷이 1개만 있다면, 다른 AZ에 프라이빗 서브넷을 1개 더 만들어야 합니다. 예: <code>private-subnet-a</code> (10.0.2.0/24, AZ-a)와 <code>private-subnet-c</code> (10.0.4.0/24, AZ-c).</p>
+      </div>
+    </section>
+
+    <!-- Lab Section -->
+    <section class="content-section" id="lab">
+      <h2>실습</h2>
+
+      <div class="lab-section">
+        <div class="lab-title">실습: RDS MySQL 인스턴스 생성하기</div>
+
+        <div class="info-box danger">
+          <div class="info-box-title">비용 주의</div>
+          <p><strong>db.t3.micro</strong>는 프리티어 대상입니다 (12개월간 월 750시간 무료). 하지만 <strong>다중 AZ</strong>나 큰 인스턴스 타입을 선택하면 프리티어를 초과합니다. 반드시 <strong>단일 AZ, db.t3.micro</strong>로 생성하세요.</p>
+        </div>
+
+        <ol class="steps">
+          <!-- Step 1 -->
+          <li class="step">
+            <div class="step-title">프라이빗 서브넷 2개 확인/생성</div>
+            <p>DB 서브넷 그룹에는 최소 2개 AZ의 프라이빗 서브넷이 필요합니다.</p>
+            <p><strong>AWS 콘솔 &rarr; VPC &rarr; Subnets</strong>에서 프라이빗 서브넷을 확인합니다.</p>
+            <ul>
+              <li><code>private-subnet-a</code> (10.0.2.0/24, ap-northeast-2a) - 있음</li>
+              <li><code>private-subnet-c</code> (10.0.4.0/24, ap-northeast-2c) - 없으면 생성</li>
+            </ul>
+
+            <p>프라이빗 서브넷이 1개만 있다면 추가 생성:</p>
+            <p><strong>VPC &rarr; Subnets &rarr; Create subnet</strong></p>
+            <ul>
+              <li><strong>VPC</strong>: <code>my-vpc</code></li>
+              <li><strong>Subnet name</strong>: <code>private-subnet-c</code></li>
+              <li><strong>Availability Zone</strong>: <code>ap-northeast-2c</code></li>
+              <li><strong>CIDR block</strong>: <code>10.0.4.0/24</code></li>
+            </ul>
+            <p><strong>Create subnet</strong> 클릭</p>
+
+            <div class="info-box tip">
+              <div class="info-box-title">라우팅 테이블 확인</div>
+              <p>새로 만든 서브넷이 프라이빗 라우팅 테이블(NAT 게이트웨이로 라우팅)에 연결되어 있는지 확인하세요. <strong>Subnet &rarr; Route table 탭</strong>에서 확인할 수 있습니다.</p>
+            </div>
+          </li>
+
+          <!-- Step 2 -->
+          <li class="step">
+            <div class="step-title">DB 서브넷 그룹 생성</div>
+            <p><strong>AWS 콘솔 &rarr; RDS &rarr; 왼쪽 메뉴 Subnet groups &rarr; Create DB subnet group</strong></p>
+            <ul>
+              <li><strong>Name</strong>: <code>dbsubnet-shopeasy</code></li>
+              <li><strong>Description</strong>: ShopEasy DB subnet group</li>
+              <li><strong>VPC</strong>: <code>my-vpc</code></li>
+            </ul>
+
+            <h4>Add subnets</h4>
+            <ul>
+              <li><strong>Availability Zones</strong>: <code>ap-northeast-2a</code>, <code>ap-northeast-2c</code> 선택</li>
+              <li><strong>Subnets</strong>:
+                <ul>
+                  <li><code>10.0.2.0/24</code> (private-subnet-a) 선택</li>
+                  <li><code>10.0.4.0/24</code> (private-subnet-c) 선택</li>
+                </ul>
+              </li>
+            </ul>
+            <p><strong>Create</strong> 클릭</p>
+            <div class="screenshot-placeholder">[스크린샷: DB 서브넷 그룹 생성]</div>
+          </li>
+
+          <!-- Step 3 -->
+          <li class="step">
+            <div class="step-title">RDS용 보안그룹 생성</div>
+            <p><strong>AWS 콘솔 &rarr; VPC &rarr; Security Groups &rarr; Create security group</strong></p>
+            <ul>
+              <li><strong>Security group name</strong>: <code>sg-rds</code></li>
+              <li><strong>Description</strong>: RDS MySQL - Allow from API servers only</li>
+              <li><strong>VPC</strong>: <code>my-vpc</code></li>
+            </ul>
+            <p><strong>Inbound rules</strong>:</p>
+            <table>
+              <thead>
+                <tr><th>Type</th><th>Port</th><th>Source</th><th>설명</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>MySQL/Aurora</td><td>3306</td><td><strong>sg-api</strong> (API 보안그룹)</td><td>API 서버에서만 DB 접근</td></tr>
+              </tbody>
+            </table>
+            <p><strong>Create security group</strong> 클릭</p>
+
+            <div class="info-box concept">
+              <div class="info-box-title">3단계 보안그룹 체이닝 완성!</div>
+              <p>이제 보안그룹 체이닝이 3단계로 완성됩니다:<br>
+              <strong>인터넷 &rarr; sg-alb(80) &rarr; sg-api(5000) &rarr; sg-rds(3306)</strong><br>
+              각 계층은 바로 앞 계층에서만 접근을 허용합니다. 외부에서 DB에 직접 접근하는 것은 불가능합니다.</p>
+            </div>
+          </li>
+
+          <!-- Step 4 -->
+          <li class="step">
+            <div class="step-title">RDS MySQL 인스턴스 생성</div>
+            <p><strong>AWS 콘솔 &rarr; RDS &rarr; Databases &rarr; Create database</strong></p>
+
+            <h4>데이터베이스 생성 방식</h4>
+            <ul>
+              <li><strong>Standard create</strong> 선택 (세부 설정 가능)</li>
+            </ul>
+
+            <h4>엔진 옵션</h4>
+            <ul>
+              <li><strong>Engine type</strong>: MySQL</li>
+              <li><strong>Engine Version</strong>: MySQL 8.0.x (최신 안정 버전)</li>
+            </ul>
+
+            <h4>템플릿</h4>
+            <ul>
+              <li><strong>Free tier</strong> 선택 (프리티어 설정이 자동 적용됨)</li>
+            </ul>
+
+            <div class="info-box warning">
+              <div class="info-box-title">반드시 Free tier를 선택하세요!</div>
+              <p>Free tier를 선택하면 db.t3.micro, 단일 AZ, 20GB 스토리지가 자동으로 설정됩니다. Production이나 Dev/Test를 선택하면 큰 비용이 발생할 수 있습니다.</p>
+            </div>
+
+            <h4>Settings</h4>
+            <ul>
+              <li><strong>DB instance identifier</strong>: <code>shopeasy-db</code></li>
+              <li><strong>Master username</strong>: <code>admin</code></li>
+              <li><strong>Master password</strong>: 안전한 비밀번호 입력 (기억하세요!)</li>
+              <li><strong>Confirm password</strong>: 비밀번호 재입력</li>
+            </ul>
+
+            <div class="info-box tip">
+              <div class="info-box-title">비밀번호 메모하세요!</div>
+              <p>RDS 마스터 비밀번호는 생성 후 콘솔에서 확인할 수 없습니다. 반드시 메모해두세요. 실습용으로는 <code>ShopEasy2024!</code> 같은 비밀번호를 사용할 수 있습니다.</p>
+            </div>
+
+            <h4>Instance configuration</h4>
+            <ul>
+              <li><strong>DB instance class</strong>: <code>db.t3.micro</code> (프리티어)</li>
+            </ul>
+
+            <h4>Storage</h4>
+            <ul>
+              <li><strong>Storage type</strong>: General Purpose SSD (gp2)</li>
+              <li><strong>Allocated storage</strong>: <code>20</code> GB</li>
+              <li><strong>Storage autoscaling</strong>: 체크 해제 (비용 관리)</li>
+            </ul>
+
+            <h4>Connectivity</h4>
+            <ul>
+              <li><strong>VPC</strong>: <code>my-vpc</code></li>
+              <li><strong>DB subnet group</strong>: <code>dbsubnet-shopeasy</code></li>
+              <li><strong>Public access</strong>: <strong>No</strong> (프라이빗 서브넷에서만 접근)</li>
+              <li><strong>VPC security group</strong>: <strong>Choose existing</strong> &rarr; <code>sg-rds</code></li>
+              <li>기본 보안그룹(default)은 제거</li>
+              <li><strong>Availability Zone</strong>: No preference</li>
+            </ul>
+
+            <h4>Database authentication</h4>
+            <ul>
+              <li><strong>Password authentication</strong> 선택</li>
+            </ul>
+
+            <h4>Additional configuration</h4>
+            <ul>
+              <li><strong>Initial database name</strong>: <code>shopeasy</code></li>
+              <li><strong>Backup retention period</strong>: <code>7</code> days</li>
+              <li>나머지는 기본값 유지</li>
+            </ul>
+
+            <p><strong>Create database</strong> 클릭</p>
+
+            <div class="info-box warning">
+              <div class="info-box-title">RDS 생성에 5~10분 소요</div>
+              <p>RDS 인스턴스 생성은 시간이 걸립니다. Status가 <code>Creating</code>에서 <code>Available</code>로 바뀔 때까지 기다리세요.</p>
+            </div>
+
+            <div class="screenshot-placeholder">[스크린샷: RDS 인스턴스 생성 설정 화면]</div>
+          </li>
+
+          <!-- Step 5 -->
+          <li class="step">
+            <div class="step-title">RDS 엔드포인트 확인</div>
+            <p>RDS가 <code>Available</code> 상태가 되면 엔드포인트를 확인합니다.</p>
+            <p><strong>AWS 콘솔 &rarr; RDS &rarr; Databases &rarr; shopeasy-db 클릭</strong></p>
+            <p><strong>Connectivity & security</strong> 탭에서:</p>
+            <ul>
+              <li><strong>Endpoint</strong>: <code>shopeasy-db.xxxxx.ap-northeast-2.rds.amazonaws.com</code></li>
+              <li><strong>Port</strong>: <code>3306</code></li>
+            </ul>
+            <p>이 엔드포인트가 API 서버에서 DB에 접속할 때 사용하는 주소입니다.</p>
+            <div class="screenshot-placeholder">[스크린샷: RDS 엔드포인트 확인]</div>
+
+            <div class="info-box concept">
+              <div class="info-box-title">엔드포인트의 장점</div>
+              <p>RDS 엔드포인트는 DNS 이름입니다. 만약 다중 AZ 장애 조치가 발생해도 이 엔드포인트는 변하지 않습니다. 자동으로 새 Primary를 가리키게 됩니다. 따라서 앱에서는 이 엔드포인트만 설정하면 됩니다.</p>
+            </div>
+          </li>
+
+          <!-- Step 6 -->
+          <li class="step">
+            <div class="step-title">API 서버에서 MySQL 접속 테스트</div>
+            <p>API 서버 EC2에 SSH 접속한 후, MySQL 클라이언트로 RDS에 접속합니다.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># API 서버 EC2에 SSH 접속 (Bastion 경유)
+# MySQL 클라이언트 설치
+sudo dnf install -y mariadb105</code></pre>
+            </div>
+
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># RDS MySQL에 접속
+mysql -h shopeasy-db.xxxxx.ap-northeast-2.rds.amazonaws.com -u admin -p
+
+# 비밀번호 입력 후 접속되면 성공!</code></pre>
+            </div>
+
+            <p>접속 후 데이터베이스를 확인합니다:</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">sql</span><button class="copy-btn">복사</button></div>
+              <pre><code>-- 데이터베이스 목록 확인
+SHOW DATABASES;
+
+-- shopeasy 데이터베이스 선택
+USE shopeasy;
+
+-- 현재 테이블 확인 (아직 비어있음)
+SHOW TABLES;
+
+-- 접속 종료
+EXIT;</code></pre>
+            </div>
+            <div class="screenshot-placeholder">[스크린샷: MySQL 클라이언트로 RDS 접속 성공]</div>
+
+            <div class="info-box tip">
+              <div class="info-box-title">접속이 안 된다면?</div>
+              <p>체크리스트:</p>
+              <ul>
+                <li>RDS 상태가 <code>Available</code>인지 확인</li>
+                <li>보안그룹 <code>sg-rds</code>에서 <code>sg-api</code>의 3306 접근이 허용되어 있는지</li>
+                <li>API 서버 EC2가 <code>sg-api</code> 보안그룹에 속해있는지</li>
+                <li>RDS 엔드포인트 주소가 정확한지</li>
+              </ul>
+            </div>
+          </li>
+        </ol>
+      </div>
+
+      <div class="info-box concept">
+        <div class="info-box-title">이번 챕터에서 달성한 것</div>
+        <ul>
+          <li>RDS의 장점(관리형 서비스)과 주요 기능 이해</li>
+          <li>DB 서브넷 그룹 생성 (프라이빗 서브넷 2개 AZ)</li>
+          <li>RDS용 보안그룹 설정 (API 서버에서만 접근 허용)</li>
+          <li>RDS MySQL 인스턴스 생성 (프리티어)</li>
+          <li>API 서버에서 RDS 접속 확인</li>
+        </ul>
+        <p>다음 챕터에서는 ShopEasy API 서버의 데이터베이스를 SQLite에서 이 RDS MySQL로 전환합니다!</p>
+      </div>
+    </section>
+
+    <div class="chapter-nav">
+      <a href="12-auto-scaling.html" class="prev">이전: Auto Scaling</a>
+      <a href="14-rds-integration.html" class="next">다음: API 서버 &rarr; RDS 연동</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+</html>

@@ -1,174 +1,65 @@
-## git bash 에서 aws cli 경로 설정 하는 방법 
+# AWS 기초 강의 - 실습 중심 학습 사이트
 
-```bash
-$ echo "alias aws='\"/c/Program Files/Amazon/AWSCLIV2/aws.exe\"'" >> ~/.bashrc
-$ source ~/.bashrc
-$ aws --version
-```
+이커머스 서비스(React + Node.js 쇼핑몰)를 AWS에 배포하면서 배우는 **AWS 입문 과정**입니다.
+(현대오토에버 모빌리티 SW 스쿨 IT 보안 내용)
 
----
+## 커리큘럼 구성
 
-## 온라인 서비스 아키텍처
+### AWS 입문 & EC2 (Ch. 01 - 07)
 
-https://vision-ai.tistory.com/entry/On-Premise-%EC%99%80-Cloud-Services
-
----
-
-
-# ShopEasy 로컬 실행 가이드
-
----
-
-## Windows에서 실행 (Git Bash)
-
-### 사전 준비
-
-1. **Node.js 18 이상** 설치
-   - https://nodejs.org 에서 LTS 버전 다운로드 → 설치 (기본 옵션 그대로 Next)
-   - 설치 중 "Add to PATH" 체크되어 있는지 확인
-
-2. **Git for Windows** 설치 (Git Bash 포함)
-   - https://gitforwindows.org 에서 다운로드 → 설치 (기본 옵션 그대로 Next)
-
-3. 설치 확인 — Git Bash 열고:
-   ```bash
-   node -v   # v18.x.x 이상
-   npm -v    # 9.x.x 이상
-   git --version
-   ```
-
-> Git Bash가 node를 못 찾으면: Git Bash를 닫았다가 다시 열기 (PATH 반영 필요)
-
-### 실행 순서
-
-```bash
-# 1. 원하는 폴더로 이동 (예: 바탕화면)
-cd ~/Desktop
-
-# 2. 소스 클론
-git clone https://github.com/<your-repo>/ecommerce-app.git
-cd ecommerce-app
-
-# 3. API 서버
-cd api-server
-npm install
-node seed.js
-npm start
-```
-
-서버가 뜨면 이런 로그가 나옴:
-```
-========================================
-  이커머스 API 서버 시작
-  포트: 5000
-  DB: sqlite
-  스토리지: local
-  리뷰 저장소: local
-  캐시: memory
-  큐: sync
-========================================
-```
-
-확인: 브라우저에서 http://localhost:5000/api/health
-
-```bash
-# 4. Git Bash 창 하나 더 열고 — 프론트엔드
-cd ~/Desktop/ecommerce-app/frontend
-npm install
-npm run dev
-```
-
-브라우저에서: http://localhost:3000
-
-> API 서버(터미널 1)와 프론트엔드(터미널 2) 둘 다 켜져 있어야 정상 동작
-
-### 서버 종료
-
-각 Git Bash 창에서 `Ctrl + C`
-
-### 다시 시작할 때 (이미 설치 완료 상태)
-
-```bash
-# 터미널 1: API 서버
-cd ~/Desktop/ecommerce-app/api-server
-npm start
-
-# 터미널 2: 프론트엔드
-cd ~/Desktop/ecommerce-app/frontend
-npm run dev
-```
-
-`npm install`과 `node seed.js`는 처음 한 번만 하면 됨.
-
-### Windows 트러블슈팅
-
-| 문제 | 해결 |
+| 챕터 | 주제 |
 |------|------|
-| `node: command not found` | Git Bash 닫고 다시 열기. 안 되면 Node.js 재설치 |
-| `npm install` 중 permission 에러 | Git Bash를 **관리자 권한으로 실행** |
-| 포트 5000이 이미 사용 중 | `.env` 파일에서 `PORT=5001`로 변경 |
-| `ENOENT: no such file or directory` | 경로에 한글 폴더명이 있으면 영문 경로로 이동 |
-| 브라우저에서 화면 안 뜸 | API 서버(5000)와 프론트(3000) 둘 다 실행 중인지 확인 |
-| `Ctrl+C`로 서버 안 꺼짐 | `Ctrl+C` 두 번 누르기 |
+| 01 | 클라우드와 AWS 개요 (이론) |
+| 02 | AWS 계정 & IAM 기본 |
+| 03 | AWS 관리 콘솔 & CLI |
+| 04 | 이커머스 서비스 소개 & 로컬 실행 |
+| 05 | EC2 기초 & API 서버 배포 |
+| 06 | EC2에 프론트엔드 배포 (Nginx) |
+| 07 | 탄력적 IP & 비용 관리 |
 
----
+### VPC 네트워킹 & 로드밸런싱 (Ch. 08 - 12)
 
-## macOS / Linux에서 실행
+| 챕터 | 주제 |
+|------|------|
+| 08 | VPC 기초 (서브넷, 라우팅, IGW) |
+| 09 | VPC 심화 (NAT, NACL, VPC 엔드포인트) |
+| 10 | 이커머스를 VPC에 재배포 |
+| 11 | ALB (Application Load Balancer) |
+| 12 | Auto Scaling |
 
-### 사전 준비
+### 데이터베이스 & 스토리지 (Ch. 13 - 17)
 
-- **Node.js 18 이상** (https://nodejs.org - LTS 버전)
-- **Git**
+| 챕터 | 주제 |
+|------|------|
+| 13 | RDS 기초 |
+| 14 | API 서버 → RDS 연동 |
+| 15 | RDS 운영 (스냅샷, 백업, 복원) |
+| 16 | DynamoDB & 리뷰 시스템 |
+| 17 | S3 & 리뷰 사진 업로드 (Pre-signed URL) |
 
-```bash
-node -v   # v18.x.x 이상
-npm -v    # 9.x.x 이상
-```
+### CDN & 서버리스 (Ch. 18 - 22)
 
-### 실행 순서
+| 챕터 | 주제 |
+|------|------|
+| 18 | S3 정적 호스팅 & 프론트엔드 이전 |
+| 19 | CloudFront (CDN) |
+| 20 | Lambda 기초 |
+| 21 | S3 + Lambda 이미지 처리 (썸네일 자동 생성) |
+| 22 | API Gateway + Lambda |
 
-```bash
-# 1. 소스 클론
-git clone https://github.com/<your-repo>/ecommerce-app.git
-cd ecommerce-app
+### 메시징 & 캐싱 & 모니터링 & IaC (Ch. 23 - 26)
 
-# 2. API 서버
-cd api-server
-npm install
-node seed.js
-npm start
-
-# 3. 터미널 하나 더 열고 — 프론트엔드
-cd ecommerce-app/frontend
-npm install
-npm run dev
-```
-
-브라우저에서: http://localhost:3000
-
----
+| 챕터 | 주제 |
+|------|------|
+| 23 | SQS & SNS (주문 비동기 처리) |
+| 24 | ElastiCache (Redis 캐싱) |
+| 25 | CloudWatch (메트릭, 로그, 경보) |
+| 26 | CloudFormation (IaC) |
 
 
-## 공통 정보
+## 관련 브랜치
 
-### 테스트 계정
-
-| 항목 | 값 |
-|------|-----|
-| 이메일 | test@test.com |
-| 비밀번호 | password123 |
-| 이름 | 테스트유저 |
-
-### .env 기본값 (로컬 모드)
-
-`.env` 파일이 아래 상태면 AWS 없이 전부 로컬로 동작. 수정 불필요.
-
-```env
-PORT=5000
-DB_TYPE=sqlite
-STORAGE_TYPE=local
-REVIEW_STORE=local
-CACHE_TYPE=memory
-QUEUE_TYPE=sync
-JWT_SECRET=ecommerce-jwt-secret-key-2024
-```
+| 브랜치 | 설명 |
+|--------|------|
+| `main` | 실습용 이커머스 앱 소스 (React + Node.js) |
+| `aws-theory` | AWS 강의 사이트 (현재 브랜치) |

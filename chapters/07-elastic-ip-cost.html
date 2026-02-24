@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>탄력적 IP & 비용 관리 - AWS 기초 강의</title>
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index.html" class="header-logo">
+      <span class="aws-icon">AWS</span>
+      <span>기초 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li><a href="#elastic-ip">탄력적 IP란?</a></li>
+      <li><a href="#instance-lifecycle">인스턴스 수명주기</a></li>
+      <li><a href="#pricing">EC2 요금 체계</a></li>
+      <li><a href="#free-tier-detail">프리티어 범위 정리</a></li>
+      <li><a href="#cost-management">비용 관리의 중요성</a></li>
+      <li><a href="#lab">실습</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 07</span>
+      <h1>탄력적 IP & 비용 관리</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>탄력적 IP의 필요성과 동작 방식을 이해할 수 있다</li>
+          <li>EC2 인스턴스의 수명주기(실행, 중지, 종료)를 이해할 수 있다</li>
+          <li>AWS 요금 체계를 이해하고 프리티어 범위를 파악할 수 있다</li>
+          <li>비용 탐색기와 예산 알림을 설정할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 탄력적 IP -->
+    <section class="content-section" id="elastic-ip">
+      <h2>탄력적 IP (Elastic IP)란?</h2>
+
+      <p>
+        EC2 인스턴스를 <strong>중지(Stop)했다가 다시 시작(Start)</strong>하면 퍼블릭 IP 주소가 바뀝니다.
+        이것은 큰 문제를 만듭니다. 사용자가 기억하고 있던 IP가 더 이상 유효하지 않게 되니까요.
+      </p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 매번 바뀌는 전화번호</div>
+        <p>
+          가게를 운영하는데, 전원을 껐다 켤 때마다 전화번호가 바뀐다고 생각해보세요.
+          명함에 적은 번호가 다음 날 무용지물이 되겠죠?<br><br>
+          <strong>탄력적 IP = 유심 번호</strong>입니다. 핸드폰을 바꿔도 유심만 옮기면 같은 번호를 유지하죠.
+          탄력적 IP도 EC2를 중지/시작해도 항상 같은 IP를 유지할 수 있게 해줍니다.
+        </p>
+      </div>
+
+      <h3>탄력적 IP의 특징</h3>
+      <ul>
+        <li>AWS 계정에 할당되는 <strong>고정된 공인 IP 주소</strong></li>
+        <li>EC2 인스턴스에 <strong>연결(Associate)/분리(Disassociate)</strong> 가능</li>
+        <li>인스턴스를 중지/시작해도 IP가 변하지 않음</li>
+        <li>다른 인스턴스로 빠르게 옮길 수 있음 (장애 대응에 유용)</li>
+      </ul>
+
+      <div class="info-box danger">
+        <div class="info-box-title">탄력적 IP 비용 주의!</div>
+        <p>
+          탄력적 IP 자체는 무료이지만, <strong>다음 경우에 비용이 발생</strong>합니다:<br><br>
+          <strong>1. 실행 중인 인스턴스에 연결되어 있으면 → 무료</strong><br>
+          <strong>2. 인스턴스 없이 그냥 보유하고 있으면 → 시간당 요금 발생!</strong><br>
+          <strong>3. 인스턴스가 중지 상태인데 연결되어 있으면 → 시간당 요금 발생!</strong><br><br>
+          AWS는 IP 주소의 낭비를 막기 위해, 사용하지 않는 탄력적 IP에 과금합니다.
+          실습 후 사용하지 않는 탄력적 IP는 반드시 <strong>릴리스(Release)</strong>하세요!
+        </p>
+      </div>
+    </section>
+
+    <!-- 인스턴스 수명주기 -->
+    <section class="content-section" id="instance-lifecycle">
+      <h2>인스턴스 수명주기</h2>
+
+      <p>EC2 인스턴스는 여러 가지 상태를 가질 수 있습니다. 각 상태에서 요금이 어떻게 부과되는지 이해하는 것이 중요합니다.</p>
+
+      <div class="diagram">
+        <div class="diagram-title">EC2 인스턴스 수명주기</div>
+
+        <div class="diagram-box network">
+          <div class="box-title">시작 (Launch)</div>
+        </div>
+
+        <div class="diagram-arrow down">&darr;</div>
+
+        <div class="diagram-row">
+          <div class="diagram-col">
+            <div class="diagram-box compute">
+              <div class="box-title">실행중</div>
+              <div class="box-sub">Running</div>
+            </div>
+          </div>
+          <div class="diagram-col">
+            <div class="diagram-arrow">중지 (Stop) &rarr;</div>
+            <div class="diagram-arrow">&larr; 시작 (Start)</div>
+          </div>
+          <div class="diagram-col">
+            <div class="diagram-box monitor">
+              <div class="box-title">중지됨</div>
+              <div class="box-sub">Stopped</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="diagram-arrow down">&darr; 종료 (Terminate)</div>
+
+        <div class="diagram-box user">
+          <div class="box-title">종료됨</div>
+          <div class="box-sub">Terminated - 되돌릴 수 없음!</div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>상태</th>
+            <th>설명</th>
+            <th>EC2 요금</th>
+            <th>EBS(디스크) 요금</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>실행 중 (Running)</strong></td>
+            <td>서버가 동작 중. SSH 접속 가능</td>
+            <td>과금</td>
+            <td>과금</td>
+          </tr>
+          <tr>
+            <td><strong>중지됨 (Stopped)</strong></td>
+            <td>서버가 꺼진 상태. 데이터는 유지</td>
+            <td>무료</td>
+            <td>과금</td>
+          </tr>
+          <tr>
+            <td><strong>종료됨 (Terminated)</strong></td>
+            <td>서버가 삭제됨. 모든 것 소실</td>
+            <td>무료</td>
+            <td>무료</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 자동차로 이해하기</div>
+        <p>
+          <strong>실행 중 = 시동 켜고 운전 중:</strong> 기름값(EC2 요금)도 들고, 주차장(EBS 디스크)도 유지<br>
+          <strong>중지 = 주차장에 세워둠:</strong> 기름값은 안 들지만, 주차비(EBS)는 나감<br>
+          <strong>종료 = 폐차:</strong> 모든 비용 없음, 하지만 차도 사라짐!
+        </p>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">실습 때 꼭 기억하세요!</div>
+        <p>
+          오늘 실습이 끝나면 인스턴스를 <strong>중지(Stop)</strong>하세요. EC2 요금이 나오지 않습니다.<br>
+          이 강의가 완전히 끝나고 더 이상 필요 없으면 <strong>종료(Terminate)</strong>하세요.<br>
+          <strong>"중지"와 "종료"를 절대 헷갈리지 마세요!</strong>
+        </p>
+      </div>
+    </section>
+
+    <!-- 요금 체계 -->
+    <section class="content-section" id="pricing">
+      <h2>EC2 요금 체계</h2>
+
+      <p>AWS EC2는 여러 가지 요금 모델을 제공합니다. 상황에 따라 적절한 모델을 선택하면 비용을 크게 절약할 수 있습니다.</p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 호텔 예약 방식</div>
+        <p>
+          <strong>온디맨드 = 당일 예약:</strong> 아무 때나 자유롭게 예약. 가장 비쌈<br>
+          <strong>예약 인스턴스 = 연간 계약:</strong> 1~3년 약정하면 할인. 최대 72% 할인<br>
+          <strong>스팟 인스턴스 = 땡처리 할인:</strong> 비어 있는 방을 싸게 제공. 최대 90% 할인. 단, 갑자기 체크아웃 당할 수 있음
+        </p>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>요금 모델</th>
+            <th>특징</th>
+            <th>할인율</th>
+            <th>적합한 경우</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>온디맨드</strong></td>
+            <td>시간당 과금, 약정 없음</td>
+            <td>기준 가격</td>
+            <td>단기 사용, 테스트, 예측 불가 워크로드</td>
+          </tr>
+          <tr>
+            <td><strong>예약 인스턴스</strong></td>
+            <td>1~3년 약정</td>
+            <td>최대 72%</td>
+            <td>24시간 운영 서비스, 예측 가능한 워크로드</td>
+          </tr>
+          <tr>
+            <td><strong>Savings Plans</strong></td>
+            <td>시간당 사용량 약정</td>
+            <td>최대 72%</td>
+            <td>유연한 약정 할인</td>
+          </tr>
+          <tr>
+            <td><strong>스팟 인스턴스</strong></td>
+            <td>남는 용량 활용, 중단 가능</td>
+            <td>최대 90%</td>
+            <td>배치 처리, 빅데이터, CI/CD</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">이 강의에서는?</div>
+        <p>
+          이 강의에서는 <strong>프리티어(온디맨드)</strong>만 사용합니다.
+          t2.micro 인스턴스는 월 750시간까지 무료이므로, 1대를 24시간 내내 돌려도 무료입니다.
+          (24시간 x 31일 = 744시간 < 750시간)
+        </p>
+      </div>
+    </section>
+
+    <!-- 프리티어 범위 -->
+    <section class="content-section" id="free-tier-detail">
+      <h2>프리티어 범위 정리</h2>
+
+      <p>이 강의에서 사용하는 주요 서비스의 프리티어 범위를 정리합니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>서비스</th>
+            <th>프리티어 범위</th>
+            <th>유형</th>
+            <th>초과 시 요금 (서울 기준)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>EC2</strong></td>
+            <td>t2.micro 월 750시간</td>
+            <td>12개월 무료</td>
+            <td>~$0.0116/시간</td>
+          </tr>
+          <tr>
+            <td><strong>EBS</strong></td>
+            <td>30GB (gp2/gp3)</td>
+            <td>12개월 무료</td>
+            <td>~$0.114/GB/월</td>
+          </tr>
+          <tr>
+            <td><strong>S3</strong></td>
+            <td>5GB 저장, 2만 GET, 2천 PUT</td>
+            <td>12개월 무료</td>
+            <td>~$0.025/GB/월</td>
+          </tr>
+          <tr>
+            <td><strong>RDS</strong></td>
+            <td>db.t2.micro/db.t3.micro 월 750시간, 20GB</td>
+            <td>12개월 무료</td>
+            <td>~$0.028/시간</td>
+          </tr>
+          <tr>
+            <td><strong>Lambda</strong></td>
+            <td>월 100만 요청, 40만 GB-초</td>
+            <td>항상 무료</td>
+            <td>$0.0000002/요청</td>
+          </tr>
+          <tr>
+            <td><strong>DynamoDB</strong></td>
+            <td>25GB 저장, 2.5억 읽기/쓰기</td>
+            <td>항상 무료</td>
+            <td>$1.25/100만 쓰기</td>
+          </tr>
+          <tr>
+            <td><strong>CloudFront</strong></td>
+            <td>월 1TB 전송, 1000만 요청</td>
+            <td>항상 무료</td>
+            <td>$0.114/GB</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box danger">
+        <div class="info-box-title">프리티어 초과 사고를 방지하려면</div>
+        <p>
+          <strong>1.</strong> 인스턴스 2대를 동시에 실행하면 750시간이 2배로 소모됩니다 (375시간 x 2)<br>
+          <strong>2.</strong> 실습 후 인스턴스를 중지하는 것을 잊지 마세요<br>
+          <strong>3.</strong> 다른 리전에 실수로 만든 리소스가 없는지 확인하세요<br>
+          <strong>4.</strong> EBS 볼륨을 30GB 이상 할당하면 초과분에 대해 과금됩니다<br>
+          <strong>5.</strong> NAT 게이트웨이는 프리티어에 포함되지 않습니다! (시간당 ~$0.045)
+        </p>
+      </div>
+    </section>
+
+    <!-- 비용 관리 -->
+    <section class="content-section" id="cost-management">
+      <h2>비용 관리의 중요성</h2>
+
+      <p>
+        AWS 비용 관리는 단순히 "절약"의 문제가 아닙니다.
+        관리하지 않으면 <strong>예상치 못한 대규모 요금</strong>이 발생할 수 있습니다.
+      </p>
+
+      <div class="info-box danger">
+        <div class="info-box-title">실제 사고 사례</div>
+        <p>
+          <strong>사례 1: 학생의 비극</strong><br>
+          AWS를 학습하던 학생이 GPU 인스턴스(p3.2xlarge, 시간당 ~$3)를 실수로 켜놓고 2주를 방치.
+          약 <strong>$1,000 (130만원)</strong>의 요금이 청구되었습니다.<br><br>
+
+          <strong>사례 2: Access Key 유출</strong><br>
+          개발자가 Access Key를 GitHub에 올림. 해커가 이를 발견하고 수백 대의 EC2를 암호화폐 채굴에 사용.
+          하루 만에 <strong>$50,000 (6,500만원)</strong>의 요금이 발생했습니다.<br><br>
+
+          <strong>사례 3: NAT 게이트웨이 방치</strong><br>
+          테스트용 NAT 게이트웨이를 삭제하지 않아 매월 <strong>$32 (4만원)</strong>씩 과금이 계속되었습니다.<br><br>
+
+          이런 사고를 방지하기 위해 <strong>예산 알림 설정이 필수</strong>입니다!
+        </p>
+      </div>
+
+      <h3>비용 관리 핵심 수칙</h3>
+      <ol>
+        <li><strong>예산 알림 설정:</strong> 일정 금액을 초과하면 이메일 알림 받기</li>
+        <li><strong>리소스 정리:</strong> 실습 후 사용하지 않는 리소스 즉시 삭제</li>
+        <li><strong>프리티어 모니터링:</strong> AWS 콘솔에서 프리티어 사용량 주기적 확인</li>
+        <li><strong>리전 확인:</strong> 다른 리전에 방치된 리소스가 없는지 확인</li>
+        <li><strong>Access Key 보호:</strong> 절대 코드에 포함하거나 공개 저장소에 올리지 않기</li>
+      </ol>
+    </section>
+
+    <!-- 실습 -->
+    <section class="content-section" id="lab">
+      <h2>실습</h2>
+
+      <div class="lab-section">
+        <div class="lab-title">실습 1: 탄력적 IP 할당 및 연결</div>
+        <ol class="steps">
+          <li class="step">
+            <div class="step-title">탄력적 IP 페이지 이동</div>
+            <p>AWS 콘솔에서 <strong>EC2 → 네트워크 및 보안 → 탄력적 IP(Elastic IPs)</strong>를 클릭합니다.</p>
+            <p>또는 검색바에 "탄력적 IP"를 입력합니다.</p>
+            <div class="screenshot-placeholder">[스크린샷: EC2 왼쪽 메뉴 - 탄력적 IP 위치]</div>
+          </li>
+
+          <li class="step">
+            <div class="step-title">탄력적 IP 주소 할당</div>
+            <p><strong>"탄력적 IP 주소 할당(Allocate Elastic IP address)"</strong> 버튼을 클릭합니다.</p>
+            <p>네트워크 경계 그룹은 기본값(ap-northeast-2)을 그대로 둡니다.</p>
+            <p><strong>"할당(Allocate)"</strong> 버튼을 클릭합니다.</p>
+            <p>새로운 고정 IP 주소가 생성됩니다. 이 IP를 메모해두세요.</p>
+            <div class="screenshot-placeholder">[스크린샷: 탄력적 IP 할당 완료 화면]</div>
+          </li>
+
+          <li class="step">
+            <div class="step-title">EC2 인스턴스에 연결</div>
+            <p>생성된 탄력적 IP를 선택하고 <strong>"작업(Actions) → 탄력적 IP 주소 연결(Associate Elastic IP address)"</strong>을 클릭합니다.</p>
+            <p><strong>인스턴스:</strong> 드롭다운에서 <code>ShopEasy-API</code> 인스턴스를 선택합니다.</p>
+            <p><strong>"연결(Associate)"</strong> 버튼을 클릭합니다.</p>
+            <div class="screenshot-placeholder">[스크린샷: 탄력적 IP 연결 화면 - 인스턴스 선택]</div>
+          </li>
+
+          <li class="step">
+            <div class="step-title">연결 확인</div>
+            <p>EC2 인스턴스 목록으로 돌아가서 <code>ShopEasy-API</code>의 퍼블릭 IP가 탄력적 IP로 바뀌었는지 확인합니다.</p>
+            <p>이 IP로 브라우저에서 접속하여 쇼핑몰이 정상 동작하는지 확인합니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">text</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>http://[탄력적-IP]</code></pre>
+            </div>
+            <div class="info-box tip">
+              <div class="info-box-title">테스트: IP가 유지되는지 확인</div>
+              <p>
+                EC2 인스턴스를 <strong>중지(Stop)</strong>했다가 다시 <strong>시작(Start)</strong>해보세요.
+                퍼블릭 IP가 변하지 않고 탄력적 IP가 유지되면 성공입니다!
+                (단, 중지 중에는 접속 불가. 시작 후 1~2분 기다린 후 접속)
+              </p>
+            </div>
+          </li>
+        </ol>
+      </div>
+
+      <div class="lab-section">
+        <div class="lab-title">실습 2: 비용 탐색기(Cost Explorer) 확인</div>
+        <ol class="steps">
+          <li class="step">
+            <div class="step-title">비용 관리 페이지 이동</div>
+            <p>상단 검색바에 <strong>"Billing"</strong>을 입력하고 <strong>"Billing and Cost Management"</strong>를 클릭합니다.</p>
+            <p>또는 오른쪽 상단 계정 메뉴 → <strong>"Billing and Cost Management"</strong></p>
+            <div class="info-box warning">
+              <div class="info-box-title">IAM 사용자로 접근이 안 되는 경우</div>
+              <p>
+                기본적으로 IAM 사용자는 결제 정보에 접근할 수 없습니다.
+                루트 사용자로 로그인한 후 <strong>계정 → IAM 사용자 및 역할이 결제 정보에 액세스</strong>를
+                활성화해야 합니다.
+              </p>
+            </div>
+          </li>
+
+          <li class="step">
+            <div class="step-title">프리티어 사용량 확인</div>
+            <p>왼쪽 메뉴에서 <strong>"프리 티어(Free Tier)"</strong>를 클릭합니다.</p>
+            <p>현재 각 서비스별 프리티어 사용량과 남은 한도를 확인할 수 있습니다.</p>
+            <div class="screenshot-placeholder">[스크린샷: 프리티어 사용량 대시보드]</div>
+          </li>
+
+          <li class="step">
+            <div class="step-title">비용 탐색기 확인</div>
+            <p>왼쪽 메뉴에서 <strong>"Cost Explorer"</strong>를 클릭합니다.</p>
+            <p>처음 사용하는 경우 "Cost Explorer 시작"을 클릭합니다 (활성화에 24시간 소요될 수 있음).</p>
+            <p>서비스별, 날짜별 비용 추이를 그래프로 확인할 수 있습니다.</p>
+            <div class="screenshot-placeholder">[스크린샷: Cost Explorer - 서비스별 비용 그래프]</div>
+          </li>
+        </ol>
+      </div>
+
+      <div class="lab-section">
+        <div class="lab-title">실습 3: 예산 알림 설정 (매우 중요!)</div>
+        <ol class="steps">
+          <li class="step">
+            <div class="step-title">예산 페이지 이동</div>
+            <p>Billing and Cost Management에서 왼쪽 메뉴의 <strong>"예산(Budgets)"</strong>을 클릭합니다.</p>
+            <p><strong>"예산 생성(Create budget)"</strong> 버튼을 클릭합니다.</p>
+          </li>
+
+          <li class="step">
+            <div class="step-title">예산 유형 선택</div>
+            <p><strong>"간소화된 템플릿 사용(Use a template)"</strong>을 선택합니다.</p>
+            <p><strong>"월별 비용 예산(Monthly cost budget)"</strong>을 선택합니다.</p>
+            <div class="screenshot-placeholder">[스크린샷: 예산 유형 선택 화면]</div>
+          </li>
+
+          <li class="step">
+            <div class="step-title">예산 설정</div>
+            <p><strong>Budget name:</strong> <code>AWS-Study-Budget</code></p>
+            <p><strong>Enter your budgeted amount ($):</strong> <code>5</code> (5달러 초과 시 알림)</p>
+            <p><strong>Email recipients:</strong> 알림을 받을 이메일 주소를 입력합니다.</p>
+            <div class="info-box tip">
+              <div class="info-box-title">왜 5달러?</div>
+              <p>
+                프리티어만 사용하면 요금이 $0이어야 합니다.
+                $5를 설정하면, 혹시 프리티어를 초과하거나 잘못된 리소스가 생겼을 때
+                조기에 발견할 수 있습니다. 실무에서는 팀/프로젝트에 맞게 설정합니다.
+              </p>
+            </div>
+          </li>
+
+          <li class="step">
+            <div class="step-title">예산 생성 완료</div>
+            <p><strong>"Create budget"</strong> 버튼을 클릭합니다.</p>
+            <p>이제 월 비용이 $5에 도달하면 (또는 80% 임계값에 도달하면) 이메일 알림이 옵니다.</p>
+            <div class="info-box concept">
+              <div class="info-box-title">알림은 실시간이 아닙니다</div>
+              <p>
+                AWS 예산 알림은 하루에 여러 번 확인하지만 실시간은 아닙니다.
+                따라서 갑자기 대규모 리소스를 잘못 만들면 알림보다 요금이 먼저 쌓일 수 있습니다.
+                항상 주의가 필요합니다.
+              </p>
+            </div>
+          </li>
+        </ol>
+      </div>
+
+      <div class="info-box danger">
+        <div class="info-box-title">실습 후 체크리스트</div>
+        <p>
+          이 챕터 실습 후 반드시 확인하세요:<br><br>
+          <strong>1. 탄력적 IP:</strong> 실행 중인 인스턴스에 연결되어 있는지 확인 (미연결 시 과금)<br>
+          <strong>2. 예산 알림:</strong> 정상적으로 생성되었는지 확인<br>
+          <strong>3. 인스턴스:</strong> 오늘 더 이상 실습하지 않으면 인스턴스 중지 (탄력적 IP도 과금 발생하니 주의)<br>
+          <strong>4. 다른 리전:</strong> 서울 이외 리전에 실수로 만든 리소스가 없는지 확인
+        </p>
+      </div>
+    </section>
+
+    <!-- Navigation -->
+    <div class="chapter-nav">
+      <a href="06-ec2-frontend-deploy.html" class="prev">이전: EC2에 프론트엔드 배포</a>
+      <a href="08-vpc-basics.html" class="next">다음: VPC 기초</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+</html>

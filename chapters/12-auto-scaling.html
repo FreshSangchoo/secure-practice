@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Auto Scaling - AWS 기초 강의</title>
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index.html" class="header-logo">
+      <span class="aws-icon">AWS</span>
+      <span>기초 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li><a href="#what-is-as">Auto Scaling이란?</a></li>
+      <li><a href="#launch-template">시작 템플릿</a></li>
+      <li><a href="#asg">Auto Scaling 그룹</a></li>
+      <li><a href="#scaling-policy">조정 정책</a></li>
+      <li><a href="#lab">실습</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 12</span>
+      <h1>Auto Scaling</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>Auto Scaling의 개념과 필요성을 이해한다</li>
+          <li>시작 템플릿을 생성하여 EC2 설정을 표준화한다</li>
+          <li>Auto Scaling 그룹을 생성하고 ALB와 연결한다</li>
+          <li>부하 테스트를 통해 자동 스케일아웃을 확인한다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 1: Auto Scaling이란? -->
+    <section class="content-section" id="what-is-as">
+      <h2>Auto Scaling이란?</h2>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유로 이해하기: 식당 알바생</div>
+        <p>동네 식당을 운영한다고 생각해보세요. 점심시간에 손님이 몰리면 알바생을 <strong>추가 투입</strong>하고, 한가한 오후에는 알바생을 <strong>일찍 퇴근</strong>시키죠? Auto Scaling은 이것과 똑같습니다. 서버에 부하가 많으면 EC2를 자동으로 늘리고, 부하가 줄면 자동으로 줄입니다. 사장님(개발자)이 직접 알바생(서버)을 추가/제거하지 않아도 됩니다!</p>
+      </div>
+
+      <h3>Auto Scaling의 장점</h3>
+      <table>
+        <thead>
+          <tr><th>장점</th><th>설명</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>탄력성</strong></td><td>트래픽에 따라 서버 수가 자동으로 조절</td></tr>
+          <tr><td><strong>가용성</strong></td><td>서버가 죽으면 자동으로 새 서버 생성</td></tr>
+          <tr><td><strong>비용 최적화</strong></td><td>필요한 만큼만 서버를 유지하여 비용 절감</td></tr>
+          <tr><td><strong>자동 복구</strong></td><td>헬스체크 실패 시 자동으로 서버 교체</td></tr>
+        </tbody>
+      </table>
+
+      <div class="diagram">
+        <div class="diagram-title">Auto Scaling 동작</div>
+        <div style="display:flex; gap:2rem; flex-wrap:wrap;">
+          <div style="flex:1; min-width:200px;">
+            <div style="text-align:center; font-weight:700; padding:0.5rem; color:var(--primary);">트래픽 증가!</div>
+            <div class="diagram-row">
+              <div class="diagram-box user"><div class="box-title">사용자</div></div>
+            </div>
+            <div class="diagram-arrow down">↓</div>
+            <div class="diagram-row">
+              <div class="diagram-box network"><div class="box-title">ALB</div></div>
+            </div>
+            <div class="diagram-arrow down">↓</div>
+            <div class="diagram-row">
+              <div class="diagram-box compute"><div class="box-title">EC2</div></div>
+              <div class="diagram-box compute"><div class="box-title">EC2</div></div>
+              <div class="diagram-box compute" style="border-style:dashed"><div class="box-title">EC2</div><div class="box-sub">자동 추가!</div></div>
+            </div>
+          </div>
+          <div style="flex:1; min-width:200px;">
+            <div style="text-align:center; font-weight:700; padding:0.5rem; color:var(--text-secondary);">트래픽 감소...</div>
+            <div class="diagram-row">
+              <div class="diagram-box user"><div class="box-title">사용자</div></div>
+            </div>
+            <div class="diagram-arrow down">↓</div>
+            <div class="diagram-row">
+              <div class="diagram-box network"><div class="box-title">ALB</div></div>
+            </div>
+            <div class="diagram-arrow down">↓</div>
+            <div class="diagram-row">
+              <div class="diagram-box compute"><div class="box-title">EC2</div><div class="box-sub">불필요한 서버 자동 제거</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3>Auto Scaling의 3가지 핵심 요소</h3>
+      <ol>
+        <li><strong>시작 템플릿 (Launch Template)</strong>: "어떤 서버를 만들 것인가?" - EC2 설정 청사진</li>
+        <li><strong>Auto Scaling 그룹 (ASG)</strong>: "서버를 몇 대 유지할 것인가?" - 최소/최대/원하는 수</li>
+        <li><strong>조정 정책 (Scaling Policy)</strong>: "언제 서버를 늘리고 줄일 것인가?" - 트리거 조건</li>
+      </ol>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유로 이해하기: 식당 운영 규칙</div>
+        <p><strong>시작 템플릿</strong> = "알바생 채용 조건표" (요리사 자격증 있고, 한식 가능하고...)<br>
+        <strong>Auto Scaling 그룹</strong> = "최소 2명, 최대 6명, 평소 3명 유지"<br>
+        <strong>조정 정책</strong> = "주문 대기가 10건 이상이면 1명 추가, 3건 이하면 1명 감소"</p>
+      </div>
+    </section>
+
+    <!-- Section 2: 시작 템플릿 -->
+    <section class="content-section" id="launch-template">
+      <h2>시작 템플릿 (Launch Template)</h2>
+
+      <p>시작 템플릿은 Auto Scaling이 새 EC2를 생성할 때 사용하는 <strong>설정 템플릿</strong>입니다. AMI, 인스턴스 타입, 보안그룹, 사용자 데이터(User Data) 등을 미리 정의해 둡니다.</p>
+
+      <h3>AMI(Amazon Machine Image)란?</h3>
+      <p>현재 잘 동작하는 API 서버 EC2의 <strong>스냅샷(복사본)</strong>을 만들어서, 이 이미지로 동일한 서버를 빠르게 생성할 수 있습니다.</p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유로 이해하기: 붕어빵 틀</div>
+        <p>AMI는 <strong>붕어빵 틀</strong>과 같습니다. 원본 서버(맛있는 붕어빵)를 만들어 놓고, 그 틀(AMI)을 떠두면 똑같은 붕어빵(서버)을 몇 개든 빠르게 찍어낼 수 있습니다. 시작 템플릿은 "이 붕어빵 틀을 사용하고, 크기는 중간(t2.micro), 소는 팥(보안그룹)"이라고 적어둔 <strong>레시피</strong>입니다.</p>
+      </div>
+
+      <h3>사용자 데이터 (User Data)</h3>
+      <p>EC2가 처음 시작될 때 자동으로 실행되는 스크립트입니다. AMI에 이미 앱이 설치되어 있어도, 환경변수 설정이나 서비스 시작 등의 작업이 필요할 수 있습니다.</p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+        <pre><code>#!/bin/bash
+# User Data 예시 - EC2 시작 시 자동 실행
+cd /home/ec2-user/ecommerce-app/api-server
+pm2 start npm --name "shopeasy-api" -- start</code></pre>
+      </div>
+    </section>
+
+    <!-- Section 3: Auto Scaling 그룹 -->
+    <section class="content-section" id="asg">
+      <h2>Auto Scaling 그룹 (ASG)</h2>
+
+      <p>Auto Scaling 그룹은 EC2 인스턴스의 수를 관리하는 <strong>논리적인 그룹</strong>입니다.</p>
+
+      <h3>핵심 설정값</h3>
+      <table>
+        <thead>
+          <tr><th>설정</th><th>설명</th><th>예시</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>최소(Minimum)</strong></td><td>항상 유지할 최소 인스턴스 수</td><td>1</td></tr>
+          <tr><td><strong>최대(Maximum)</strong></td><td>절대 넘지 않을 최대 인스턴스 수</td><td>4</td></tr>
+          <tr><td><strong>원하는 용량(Desired)</strong></td><td>현재 유지하려는 인스턴스 수</td><td>2</td></tr>
+        </tbody>
+      </table>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유로 이해하기: 식당 인력 관리</div>
+        <p>식당에서 "최소 1명은 무조건 있어야 하고(최소), 아무리 바빠도 4명까지만(최대), 평소에는 2명이 적당(원하는 용량)"이라고 정하는 것과 같습니다. Auto Scaling은 이 규칙 안에서 자동으로 알바생을 늘리고 줄입니다.</p>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">최대값 설정 주의</div>
+        <p>최대값을 너무 높게 설정하면, 예상치 못한 트래픽 폭주 시 수십 대의 EC2가 생성되어 큰 비용이 발생할 수 있습니다. 학습 환경에서는 <strong>최대 4대</strong> 이하로 설정하세요.</p>
+      </div>
+    </section>
+
+    <!-- Section 4: 조정 정책 -->
+    <section class="content-section" id="scaling-policy">
+      <h2>조정 정책 (Scaling Policy)</h2>
+
+      <p>Auto Scaling 그룹이 <strong>언제</strong> 서버를 늘리고 줄일지 결정하는 정책입니다.</p>
+
+      <h3>대상 추적 조정 (Target Tracking Scaling)</h3>
+      <p>가장 쉽고 권장되는 방식입니다. "CPU 사용률을 70%로 유지해줘"라고 설정하면, Auto Scaling이 알아서 서버를 늘리고 줄입니다.</p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유로 이해하기: 에어컨 자동 모드</div>
+        <p>에어컨을 "24도 유지"로 설정하면, 에어컨이 알아서 강풍/약풍을 조절하죠? 대상 추적 조정도 마찬가지입니다. "CPU 70% 유지"로 설정하면, CPU가 70%를 넘으면 서버를 추가하고, 70% 아래로 내려가면 서버를 줄입니다.</p>
+      </div>
+
+      <h3>조정 정책 종류 비교</h3>
+      <table>
+        <thead>
+          <tr><th>정책 유형</th><th>설명</th><th>난이도</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>대상 추적</strong></td><td>"CPU 70% 유지" 같은 목표값 설정</td><td>쉬움 (권장)</td></tr>
+          <tr><td><strong>단계 조정</strong></td><td>CPU 70~80%면 +1대, 80~90%면 +2대</td><td>보통</td></tr>
+          <tr><td><strong>단순 조정</strong></td><td>경보 발생 시 지정된 수만큼 변경</td><td>쉬움</td></tr>
+          <tr><td><strong>예약된 조정</strong></td><td>특정 시간에 맞춰 미리 조정</td><td>쉬움</td></tr>
+        </tbody>
+      </table>
+
+      <div class="info-box tip">
+        <div class="info-box-title">실무 팁: 여러 정책을 조합</div>
+        <p>실무에서는 <strong>대상 추적</strong>(기본)과 <strong>예약된 조정</strong>(예측 가능한 트래픽)을 함께 사용하는 경우가 많습니다. 예: 매일 점심 12시에 미리 서버를 늘려두고, 실시간 트래픽에 따라 추가 조정.</p>
+      </div>
+    </section>
+
+    <!-- Lab Section -->
+    <section class="content-section" id="lab">
+      <h2>실습</h2>
+
+      <div class="lab-section">
+        <div class="lab-title">실습: Auto Scaling으로 API 서버 자동 확장하기</div>
+
+        <div class="info-box danger">
+          <div class="info-box-title">비용 주의</div>
+          <p>Auto Scaling이 최대 4대까지 EC2를 생성할 수 있습니다. t2.micro는 프리티어 범위이지만, 여러 대가 동시에 실행되면 프리티어 한도(월 750시간)를 초과할 수 있습니다. 실습 후 Auto Scaling 그룹의 <strong>원하는 용량을 0</strong>으로 변경하거나 삭제하세요.</p>
+        </div>
+
+        <ol class="steps">
+          <!-- Step 1 -->
+          <li class="step">
+            <div class="step-title">API 서버 AMI 생성</div>
+            <p>현재 정상 동작하는 API 서버 EC2의 이미지를 만듭니다.</p>
+            <p><strong>AWS 콘솔 &rarr; EC2 &rarr; Instances &rarr; ShopEasy-API 선택</strong></p>
+            <p><strong>Actions &rarr; Image and templates &rarr; Create image</strong></p>
+            <ul>
+              <li><strong>Image name</strong>: <code>shopeasy-api-v1</code></li>
+              <li><strong>Image description</strong>: ShopEasy API 서버 - Node.js + PM2</li>
+              <li><strong>No reboot</strong>: 체크 (서비스 중단 방지)</li>
+            </ul>
+            <p><strong>Create image</strong> 클릭</p>
+
+            <div class="info-box warning">
+              <div class="info-box-title">AMI 생성에 시간이 걸립니다</div>
+              <p>AMI 생성은 5~10분 정도 소요됩니다. <strong>EC2 &rarr; AMIs</strong>에서 Status가 <code>available</code>이 될 때까지 기다리세요.</p>
+            </div>
+
+            <div class="screenshot-placeholder">[스크린샷: AMI 생성 화면]</div>
+          </li>
+
+          <!-- Step 2 -->
+          <li class="step">
+            <div class="step-title">시작 템플릿 생성</div>
+            <p><strong>AWS 콘솔 &rarr; EC2 &rarr; 왼쪽 메뉴 Instances &rarr; Launch Templates &rarr; Create launch template</strong></p>
+
+            <h4>Launch template name and description</h4>
+            <ul>
+              <li><strong>Launch template name</strong>: <code>lt-shopeasy-api</code></li>
+              <li><strong>Template version description</strong>: ShopEasy API 서버 v1</li>
+              <li><strong>Auto Scaling guidance</strong>: 체크 (Auto Scaling에 필요한 설정 안내)</li>
+            </ul>
+
+            <h4>Application and OS Images (Amazon Machine Image)</h4>
+            <ul>
+              <li><strong>My AMIs</strong> 탭 선택</li>
+              <li><code>shopeasy-api-v1</code> 선택</li>
+            </ul>
+
+            <h4>Instance type</h4>
+            <ul>
+              <li><code>t2.micro</code> 선택</li>
+            </ul>
+
+            <h4>Key pair</h4>
+            <ul>
+              <li>기존 키페어 선택</li>
+            </ul>
+
+            <h4>Network settings</h4>
+            <ul>
+              <li><strong>Security groups</strong>: <code>sg-api</code> 선택</li>
+            </ul>
+
+            <h4>Advanced details &rarr; User data</h4>
+            <p>EC2가 시작될 때 자동으로 API 서버를 실행하는 스크립트를 넣습니다:</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code>#!/bin/bash
+# API 서버 자동 시작
+cd /home/ec2-user/ecommerce-app/api-server
+sudo -u ec2-user pm2 start npm --name "shopeasy-api" -- start
+sudo -u ec2-user pm2 save</code></pre>
+            </div>
+
+            <p><strong>Create launch template</strong> 클릭</p>
+            <div class="screenshot-placeholder">[스크린샷: 시작 템플릿 생성 완료]</div>
+          </li>
+
+          <!-- Step 3 -->
+          <li class="step">
+            <div class="step-title">Auto Scaling 그룹 생성</div>
+            <p><strong>AWS 콘솔 &rarr; EC2 &rarr; 왼쪽 메뉴 Auto Scaling &rarr; Auto Scaling Groups &rarr; Create Auto Scaling group</strong></p>
+
+            <h4>Step 1: 시작 템플릿 선택</h4>
+            <ul>
+              <li><strong>Auto Scaling group name</strong>: <code>asg-shopeasy-api</code></li>
+              <li><strong>Launch template</strong>: <code>lt-shopeasy-api</code> 선택</li>
+            </ul>
+            <p><strong>Next</strong> 클릭</p>
+
+            <h4>Step 2: 인스턴스 시작 옵션</h4>
+            <ul>
+              <li><strong>VPC</strong>: <code>my-vpc</code></li>
+              <li><strong>Availability Zones and subnets</strong>: 프라이빗 서브넷 선택
+                <ul>
+                  <li><code>private-subnet-a</code></li>
+                  <li><code>private-subnet-c</code> (있는 경우)</li>
+                </ul>
+              </li>
+            </ul>
+            <p><strong>Next</strong> 클릭</p>
+
+            <h4>Step 3: 고급 옵션 (ALB 연결)</h4>
+            <ul>
+              <li><strong>Load balancing</strong>: <code>Attach to an existing load balancer</code> 선택</li>
+              <li><strong>Choose from your load balancer target groups</strong>에서 <code>tg-shopeasy-api</code> 선택</li>
+              <li><strong>Health checks</strong>:
+                <ul>
+                  <li><strong>ELB</strong> 체크 (ALB의 헬스체크도 함께 사용)</li>
+                  <li><strong>Health check grace period</strong>: <code>120</code>초</li>
+                </ul>
+              </li>
+            </ul>
+            <p><strong>Next</strong> 클릭</p>
+
+            <div class="info-box concept">
+              <div class="info-box-title">Health check grace period란?</div>
+              <p>새 EC2가 시작된 후 앱이 완전히 로드되기까지 시간이 걸립니다. Grace period는 "이 시간 동안은 헬스체크 실패해도 건강하다고 간주해줘"라는 설정입니다. 120초면 2분 동안 앱 시작을 기다려줍니다.</p>
+            </div>
+
+            <h4>Step 4: 그룹 크기 설정</h4>
+            <ul>
+              <li><strong>Desired capacity</strong>: <code>2</code></li>
+              <li><strong>Minimum capacity</strong>: <code>1</code></li>
+              <li><strong>Maximum capacity</strong>: <code>4</code></li>
+            </ul>
+            <p><strong>Next</strong> 클릭</p>
+
+            <div class="screenshot-placeholder">[스크린샷: ASG 그룹 크기 설정]</div>
+
+            <h4>Step 5~7: 알림, 태그 (기본값 유지)</h4>
+            <p>나머지 단계는 기본값으로 두고 <strong>Next</strong> &rarr; <strong>Next</strong> &rarr; <strong>Create Auto Scaling group</strong> 클릭</p>
+          </li>
+
+          <!-- Step 4 -->
+          <li class="step">
+            <div class="step-title">대상 추적 조정 정책 설정</div>
+            <p>Auto Scaling 그룹이 생성되면 조정 정책을 추가합니다.</p>
+            <p><strong>AWS 콘솔 &rarr; EC2 &rarr; Auto Scaling Groups &rarr; asg-shopeasy-api &rarr; Automatic scaling 탭</strong></p>
+            <p><strong>Create dynamic scaling policy</strong> 클릭</p>
+            <ul>
+              <li><strong>Policy type</strong>: <code>Target tracking scaling</code></li>
+              <li><strong>Scaling policy name</strong>: <code>cpu-70-target</code></li>
+              <li><strong>Metric type</strong>: <code>Average CPU utilization</code></li>
+              <li><strong>Target value</strong>: <code>70</code></li>
+              <li><strong>Instances need</strong>: <code>120</code> seconds warm up</li>
+            </ul>
+            <p><strong>Create</strong> 클릭</p>
+
+            <div class="info-box analogy">
+              <div class="info-box-title">비유로 이해하기</div>
+              <p>에어컨 온도를 24도로 맞춘 것처럼, CPU를 70%로 맞췄습니다. 서버들의 평균 CPU가 70%를 넘으면 서버를 추가하고, 70% 아래로 내려가면 서버를 줄입니다. 마치 에어컨이 자동으로 풍량을 조절하는 것과 같죠!</p>
+            </div>
+
+            <div class="screenshot-placeholder">[스크린샷: 대상 추적 조정 정책 설정]</div>
+          </li>
+
+          <!-- Step 5 -->
+          <li class="step">
+            <div class="step-title">Auto Scaling 그룹 동작 확인</div>
+            <p>Auto Scaling 그룹이 생성되면, 자동으로 원하는 용량(2대)만큼 EC2가 생성됩니다.</p>
+            <p><strong>AWS 콘솔 &rarr; EC2 &rarr; Instances</strong>에서 새로운 인스턴스가 생성되는 것을 확인합니다.</p>
+
+            <div class="info-box tip">
+              <div class="info-box-title">기존 수동 생성 EC2는?</div>
+              <p>Chapter 10-11에서 수동으로 만든 ShopEasy-API, ShopEasy-API-2는 이제 Auto Scaling이 관리하는 새 인스턴스로 대체됩니다. 기존 인스턴스는 대상 그룹에서 제거하고 중지하세요.</p>
+            </div>
+
+            <p>대상 그룹에서 새 인스턴스의 상태를 확인합니다:</p>
+            <p><strong>EC2 &rarr; Target Groups &rarr; tg-shopeasy-api &rarr; Targets 탭</strong></p>
+            <ul>
+              <li>Auto Scaling이 생성한 인스턴스 2대가 <code>healthy</code>인지 확인</li>
+            </ul>
+            <div class="screenshot-placeholder">[스크린샷: 대상 그룹에서 Auto Scaling 인스턴스 healthy 확인]</div>
+          </li>
+
+          <!-- Step 6 -->
+          <li class="step">
+            <div class="step-title">부하 테스트 - 스케일아웃 확인</div>
+            <p>API 서버에 인위적으로 부하를 주어 Auto Scaling이 서버를 추가하는지 확인합니다.</p>
+            <p>Bastion Host(프론트엔드 EC2)를 통해 API 서버에 접속합니다:</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># API 서버 EC2에 SSH 접속 후 stress 도구 설치
+sudo dnf install -y stress
+
+# CPU 부하 생성 (4개 코어에 부하, 5분간)
+stress --cpu 4 --timeout 300</code></pre>
+            </div>
+
+            <div class="info-box warning">
+              <div class="info-box-title">stress가 설치되지 않으면?</div>
+              <p>Amazon Linux 2023에서 stress가 없는 경우, 아래 방법으로 CPU 부하를 줄 수 있습니다:</p>
+            </div>
+
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># 대안: dd 명령어로 CPU 부하 생성
+dd if=/dev/urandom of=/dev/null bs=1M &
+dd if=/dev/urandom of=/dev/null bs=1M &
+dd if=/dev/urandom of=/dev/null bs=1M &
+dd if=/dev/urandom of=/dev/null bs=1M &
+
+# 5분 후 종료
+sleep 300 && kill %1 %2 %3 %4</code></pre>
+            </div>
+
+            <p>또는 외부에서 API에 대량 요청을 보낼 수도 있습니다:</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># 프론트엔드 EC2에서 대량 요청 (ab: Apache Benchmark)
+sudo dnf install -y httpd-tools
+
+# ALB에 동시 100개 요청, 총 10000개 요청
+ab -n 10000 -c 100 http://alb-shopeasy-123456789.ap-northeast-2.elb.amazonaws.com/api/products</code></pre>
+            </div>
+          </li>
+
+          <!-- Step 7 -->
+          <li class="step">
+            <div class="step-title">CloudWatch에서 스케일아웃 확인</div>
+            <p>부하 테스트 후 3~5분 뒤 CloudWatch에서 CPU 메트릭과 스케일아웃 활동을 확인합니다.</p>
+            <p><strong>AWS 콘솔 &rarr; EC2 &rarr; Auto Scaling Groups &rarr; asg-shopeasy-api</strong></p>
+
+            <h4>Activity 탭</h4>
+            <p>스케일아웃 활동 이력을 확인합니다:</p>
+            <ul>
+              <li>"Launching a new EC2 instance: i-xxxx" 메시지가 보이면 스케일아웃 성공!</li>
+            </ul>
+
+            <h4>Monitoring 탭</h4>
+            <p>CPU 사용률 그래프를 확인합니다:</p>
+            <ul>
+              <li>CPU가 70%를 넘어가는 시점에서 인스턴스가 추가된 것을 확인</li>
+              <li>인스턴스가 추가된 후 CPU가 분산되어 내려가는 것을 확인</li>
+            </ul>
+
+            <div class="screenshot-placeholder">[스크린샷: Auto Scaling Activity 탭 - 스케일아웃 이벤트]</div>
+            <div class="screenshot-placeholder">[스크린샷: CloudWatch CPU 메트릭 그래프]</div>
+
+            <div class="info-box concept">
+              <div class="info-box-title">스케일아웃 프로세스</div>
+              <p>1. CloudWatch가 CPU 70% 초과 감지 &rarr; 2. Auto Scaling 경보 발생 &rarr; 3. ASG가 새 EC2 시작 &rarr; 4. 새 EC2가 ALB 대상 그룹에 자동 등록 &rarr; 5. 헬스체크 통과 후 트래픽 수신 시작</p>
+            </div>
+          </li>
+
+          <!-- Step 8 -->
+          <li class="step">
+            <div class="step-title">스케일인 확인 (부하 제거 후)</div>
+            <p>부하 테스트를 중지하면, CPU가 점차 내려가면서 Auto Scaling이 불필요한 인스턴스를 제거합니다.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># stress 프로세스 종료
+pkill stress
+# 또는
+kill %1 %2 %3 %4</code></pre>
+            </div>
+
+            <p>5~10분 후 Activity 탭에서 "Terminating EC2 instance" 메시지를 확인합니다.</p>
+
+            <div class="info-box tip">
+              <div class="info-box-title">스케일인은 천천히 진행됩니다</div>
+              <p>AWS는 스케일인을 신중하게 합니다. 급격한 트래픽 변동에 대비하여 쿨다운 기간(기본 300초)이 지난 후 서서히 인스턴스를 줄입니다. 실습에서는 10~15분 정도 기다려야 할 수 있습니다.</p>
+            </div>
+          </li>
+
+          <!-- Step 9 -->
+          <li class="step">
+            <div class="step-title">실습 정리</div>
+            <p>비용 절약을 위해 다음 챕터를 바로 진행하지 않는다면 정리합니다.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># 방법 1: ASG의 원하는 용량을 0으로 (인스턴스만 종료)
+# AWS 콘솔 > Auto Scaling Groups > asg-shopeasy-api > Edit
+# Desired: 0, Minimum: 0
+
+# 방법 2: ASG 삭제 (시작 템플릿은 유지)
+# AWS 콘솔 > Auto Scaling Groups > asg-shopeasy-api > Delete</code></pre>
+            </div>
+          </li>
+        </ol>
+      </div>
+
+      <div class="info-box concept">
+        <div class="info-box-title">이번 챕터에서 달성한 것</div>
+        <ul>
+          <li>API 서버의 AMI를 생성하여 서버 환경을 표준화</li>
+          <li>시작 템플릿으로 EC2 설정을 코드화</li>
+          <li>Auto Scaling 그룹으로 서버 수를 자동 관리</li>
+          <li>대상 추적 조정 정책으로 CPU 기반 자동 확장</li>
+          <li>ALB + Auto Scaling 조합으로 고가용성 아키텍처 완성</li>
+        </ul>
+      </div>
+    </section>
+
+    <div class="chapter-nav">
+      <a href="11-alb.html" class="prev">이전: ALB (Application Load Balancer)</a>
+      <a href="13-rds-basics.html" class="next">다음: RDS 기초</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VPC 심화 - AWS 기초 강의</title>
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index.html" class="header-logo">
+      <span class="aws-icon">AWS</span>
+      <span>기초 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li><a href="#nat-gateway">NAT 게이트웨이</a></li>
+      <li><a href="#sg-vs-nacl">보안그룹 vs NACL</a></li>
+      <li><a href="#sg-chaining">보안그룹 체이닝</a></li>
+      <li><a href="#vpc-endpoint">VPC 엔드포인트</a></li>
+      <li><a href="#lab">실습</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 09</span>
+      <h1>VPC 심화</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>NAT 게이트웨이의 필요성과 동작 방식을 설명할 수 있다</li>
+          <li>보안그룹과 NACL의 차이를 구분할 수 있다</li>
+          <li>보안그룹 체이닝을 통한 트래픽 흐름 설계를 이해할 수 있다</li>
+          <li>NAT 게이트웨이를 생성하고 보안그룹을 설계할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- NAT 게이트웨이 -->
+    <section class="content-section" id="nat-gateway">
+      <h2>NAT 게이트웨이란?</h2>
+
+      <p>
+        프라이빗 서브넷의 리소스는 인터넷에 직접 접속할 수 없습니다.
+        하지만 소프트웨어 업데이트, 외부 API 호출 등을 위해 인터넷 접속이 필요한 경우가 있습니다.
+        이때 <strong>NAT(Network Address Translation) 게이트웨이</strong>를 사용합니다.
+      </p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 아파트 경비실의 택배 서비스</div>
+        <p>
+          프라이빗 서브넷의 서버(201동 주민)는 직접 정문(인터넷)으로 나갈 수 없습니다.
+          하지만 택배를 보내야 할 때가 있죠.<br><br>
+
+          이때 <strong>경비실(NAT 게이트웨이)</strong>에 택배를 맡기면,
+          경비실이 <strong>대신 정문을 통해 택배를 발송</strong>합니다.
+          답장(응답)도 경비실이 대신 받아서 201동에 전달해줍니다.<br><br>
+
+          중요한 점은:<br>
+          - 안에서 밖으로는 가능 (택배 발송 = 프라이빗 → 인터넷)<br>
+          - <strong>밖에서 안으로 직접 오는 것은 불가능</strong> (외부에서 프라이빗 서버 접근 차단)
+        </p>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">NAT 게이트웨이 동작 원리</div>
+
+        <div class="diagram-box user">
+          <div class="box-title">인터넷</div>
+        </div>
+        <div class="diagram-arrow down">&darr;</div>
+        <div class="diagram-box network">
+          <div class="box-title">IGW</div>
+          <div class="box-sub">인터넷 게이트웨이</div>
+        </div>
+        <div class="diagram-arrow down">&darr;</div>
+
+        <div class="diagram-group vpc">
+          <div class="diagram-group-label">VPC</div>
+
+          <div class="diagram-group subnet-pub">
+            <div class="diagram-group-label">퍼블릭 서브넷</div>
+            <div class="diagram-row">
+              <div class="diagram-box network">
+                <div class="box-title">NAT 게이트웨이</div>
+              </div>
+              <div class="diagram-box compute">
+                <div class="box-title">EC2 웹서버</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="diagram-arrow down">&uarr; NAT를 통해 간접 접근</div>
+
+          <div class="diagram-group subnet-priv">
+            <div class="diagram-group-label">프라이빗 서브넷</div>
+            <div class="diagram-row">
+              <div class="diagram-box database">
+                <div class="box-title">RDS</div>
+                <div class="box-sub">업데이트 &rarr; NAT</div>
+              </div>
+              <div class="diagram-box compute">
+                <div class="box-title">EC2</div>
+                <div class="box-sub">pip install &rarr; NAT</div>
+              </div>
+            </div>
+            <div style="text-align:center; color: #ef4444; font-weight: 600; margin-top: 8px;">외부에서 직접 접근 불가!</div>
+          </div>
+        </div>
+      </div>
+
+      <h3>NAT 게이트웨이의 특징</h3>
+      <ul>
+        <li><strong>퍼블릭 서브넷에 위치</strong>해야 합니다 (인터넷 접근이 가능한 곳)</li>
+        <li><strong>탄력적 IP가 필요</strong>합니다 (고정 공인 IP)</li>
+        <li>프라이빗 서브넷의 라우팅 테이블에 NAT 게이트웨이로 가는 경로를 추가해야 합니다</li>
+        <li>아웃바운드(나가는) 트래픽만 허용. 인바운드(들어오는) 접근은 차단</li>
+      </ul>
+
+      <div class="info-box danger">
+        <div class="info-box-title">NAT 게이트웨이는 프리티어에 포함되지 않습니다!</div>
+        <p>
+          NAT 게이트웨이는 시간당 약 <strong>$0.045 (약 60원)</strong> + 데이터 처리 비용이 발생합니다.
+          하루 약 $1.08, 한 달이면 약 <strong>$32 (약 4만원)</strong>입니다.<br><br>
+          <strong>실습 후 반드시 삭제</strong>하세요! 방치하면 매월 4만원씩 과금됩니다.
+          실습에서는 NAT 게이트웨이를 생성하고 동작을 확인한 후 바로 삭제하는 것을 권장합니다.
+        </p>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">비용 절약 대안: NAT 인스턴스</div>
+        <p>
+          학습/개발 환경에서는 NAT 게이트웨이 대신 <strong>NAT 인스턴스</strong>(t2.micro EC2)를 사용할 수 있습니다.
+          프리티어 범위 내에서 무료로 사용 가능하지만, 성능과 가용성이 낮습니다.
+          프로덕션에서는 NAT 게이트웨이를 사용하는 것이 표준입니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 보안그룹 vs NACL -->
+    <section class="content-section" id="sg-vs-nacl">
+      <h2>보안그룹 vs NACL</h2>
+
+      <p>
+        VPC에는 두 가지 보안 계층이 있습니다: <strong>보안그룹(Security Group)</strong>과
+        <strong>네트워크 ACL(NACL, Network Access Control List)</strong>.
+        이 둘의 차이를 정확히 이해하는 것이 중요합니다.
+      </p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 집 도어락 vs 아파트 동 출입문</div>
+        <p>
+          <strong>보안그룹 = 집의 도어락:</strong> 각 집(EC2)마다 개별 도어락이 있습니다.
+          "누구를 들여보낼지" 집주인이 직접 설정합니다.
+          허용된 사람만 들어올 수 있고, 나갈 때는 자유롭습니다.<br><br>
+
+          <strong>NACL = 아파트 동 출입문:</strong> 동 전체에 적용되는 출입 규칙입니다.
+          "101동 출입 금지 명단"이 있을 수 있고, "통과 허용 명단"이 있을 수 있습니다.
+          들어올 때와 나갈 때 모두 확인합니다.
+        </p>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>구분</th>
+            <th>보안그룹 (Security Group)</th>
+            <th>NACL (Network ACL)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>적용 범위</strong></td>
+            <td>인스턴스(ENI) 수준</td>
+            <td>서브넷 수준</td>
+          </tr>
+          <tr>
+            <td><strong>규칙 유형</strong></td>
+            <td>허용 규칙만 (Allow only)</td>
+            <td>허용 + 거부 규칙 (Allow & Deny)</td>
+          </tr>
+          <tr>
+            <td><strong>상태</strong></td>
+            <td>상태 저장 (Stateful)</td>
+            <td>상태 비저장 (Stateless)</td>
+          </tr>
+          <tr>
+            <td><strong>규칙 평가</strong></td>
+            <td>모든 규칙을 동시 평가</td>
+            <td>번호 순서대로 평가</td>
+          </tr>
+          <tr>
+            <td><strong>기본 동작</strong></td>
+            <td>인바운드: 모두 차단 / 아웃바운드: 모두 허용</td>
+            <td>기본 NACL: 모두 허용 / 커스텀 NACL: 모두 차단</td>
+          </tr>
+          <tr>
+            <td><strong>실무 사용</strong></td>
+            <td>주로 사용 (필수)</td>
+            <td>보조적 사용 (선택)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">Stateful vs Stateless가 뭔가요?</div>
+        <p>
+          <strong>Stateful (보안그룹):</strong> 들어오는 것을 허용하면, 그에 대한 응답은 자동으로 나갈 수 있습니다.
+          "80번 포트로 들어오는 것 허용" → 응답도 자동 허용. 아웃바운드 규칙 불필요.<br><br>
+
+          <strong>Stateless (NACL):</strong> 들어오는 것과 나가는 것을 각각 별도로 허용해야 합니다.
+          "인바운드 80번 허용"해도 "아웃바운드도 별도로 허용"해야 응답이 나갑니다.<br><br>
+
+          보안그룹이 더 관리하기 쉽기 때문에 실무에서는 보안그룹을 주로 사용합니다.
+        </p>
+      </div>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: Stateful vs Stateless 더 쉽게</div>
+        <p>
+          <strong>보안그룹 (Stateful) = 백화점 출입구:</strong>
+          들어올 때 출입증을 보여주면, 나갈 때는 그냥 나갈 수 있습니다. "이미 확인했으니까."<br><br>
+
+          <strong>NACL (Stateless) = 국경 검문소:</strong>
+          입국할 때도 여권 검사, 출국할 때도 여권 검사. 매번 확인합니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 보안그룹 체이닝 -->
+    <section class="content-section" id="sg-chaining">
+      <h2>보안그룹 체이닝</h2>
+
+      <p>
+        <strong>보안그룹 체이닝(Security Group Chaining)</strong>은
+        보안그룹의 소스(Source)에 IP 대신 <strong>다른 보안그룹의 ID를 지정</strong>하는 기법입니다.
+        이를 통해 서비스 간의 접근 흐름을 깔끔하게 설계할 수 있습니다.
+      </p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 사원증으로 연쇄 출입</div>
+        <p>
+          회사에서 1층 로비를 통과하면(ALB 보안그룹), 3층 개발실(EC2 보안그룹)에 갈 수 있고,
+          3층 개발실 사원증이 있으면 지하 서버실(RDS 보안그룹)에도 갈 수 있습니다.<br><br>
+
+          각 구역은 "어떤 사원증을 가진 사람만 출입 가능"으로 설정됩니다.
+          IP 주소를 직접 지정하지 않아도, "ALB 보안그룹에 속한 것만 허용"처럼 설정합니다.
+        </p>
+      </div>
+
+      <h3>ShopEasy의 보안그룹 체이닝 설계</h3>
+
+      <div class="diagram">
+        <div class="diagram-title">보안그룹 체이닝 흐름</div>
+
+        <div class="diagram-box user">
+          <div class="box-title">인터넷 사용자</div>
+        </div>
+
+        <div class="diagram-arrow down">&darr; 80, 443 (HTTP/HTTPS)</div>
+
+        <div class="diagram-box network">
+          <div class="box-title">ALB 보안그룹 (SG-ALB)</div>
+          <div class="box-sub">인바운드: 80, 443 / 소스: 0.0.0.0/0</div>
+        </div>
+
+        <div class="diagram-arrow down">&darr; 5000 (API)</div>
+
+        <div class="diagram-box compute">
+          <div class="box-title">EC2 보안그룹 (SG-EC2)</div>
+          <div class="box-sub">인바운드: 5000 / 소스: SG-ALB</div>
+          <div class="box-sub" style="color: #f59e0b;">IP가 아닌 보안그룹!</div>
+        </div>
+
+        <div class="diagram-arrow down">&darr; 3306 (MySQL)</div>
+
+        <div class="diagram-box database">
+          <div class="box-title">RDS 보안그룹 (SG-RDS)</div>
+          <div class="box-sub">인바운드: 3306 / 소스: SG-EC2</div>
+          <div class="box-sub" style="color: #f59e0b;">EC2에서만 접근 가능!</div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>보안그룹</th>
+            <th>인바운드 규칙</th>
+            <th>의미</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>SG-ALB</strong></td>
+            <td>HTTP(80), HTTPS(443) / 소스: 0.0.0.0/0</td>
+            <td>인터넷 누구나 웹 접속 가능</td>
+          </tr>
+          <tr>
+            <td><strong>SG-EC2</strong></td>
+            <td>Custom TCP(5000) / 소스: SG-ALB</td>
+            <td>ALB에서 온 요청만 API 서버에 접근</td>
+          </tr>
+          <tr>
+            <td></td>
+            <td>SSH(22) / 소스: 내 IP</td>
+            <td>관리자만 SSH 접속</td>
+          </tr>
+          <tr>
+            <td><strong>SG-RDS</strong></td>
+            <td>MySQL(3306) / 소스: SG-EC2</td>
+            <td>EC2(API 서버)에서만 DB 접근</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">왜 보안그룹 체이닝이 좋은가요?</div>
+        <p>
+          <strong>1. 보안:</strong> 각 계층이 바로 이전 계층에서만 접근 가능. DB는 인터넷에서 절대 직접 접근 불가<br>
+          <strong>2. 유연성:</strong> EC2의 IP가 바뀌어도 보안그룹 ID는 그대로이므로 규칙 수정 불필요<br>
+          <strong>3. Auto Scaling 대응:</strong> 새 EC2가 생겨도 같은 보안그룹에 속하면 자동으로 DB 접근 가능<br>
+          <strong>4. 가독성:</strong> "0.0.0.0/0" 대신 "SG-ALB"로 표시되어 규칙의 의도가 명확
+        </p>
+      </div>
+    </section>
+
+    <!-- VPC 엔드포인트 -->
+    <section class="content-section" id="vpc-endpoint">
+      <h2>VPC 엔드포인트 (간단히)</h2>
+
+      <p>
+        <strong>VPC 엔드포인트</strong>는 VPC 내부에서 AWS 서비스(S3, DynamoDB 등)에
+        <strong>인터넷을 거치지 않고 직접 연결</strong>하는 방법입니다.
+      </p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 건물 내 편의점</div>
+        <p>
+          아파트 단지(VPC) 안에 편의점(S3)이 있다면,
+          굳이 정문(인터넷)을 나가서 바깥 편의점에 갈 필요가 없겠죠?
+          단지 안에서 바로 갈 수 있으니 더 빠르고, 안전하고, 비용도 절약됩니다.<br><br>
+          VPC 엔드포인트가 바로 이 "단지 내 편의점"입니다.
+        </p>
+      </div>
+
+      <h3>VPC 엔드포인트의 두 가지 유형</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>유형</th>
+            <th>지원 서비스</th>
+            <th>비용</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>게이트웨이 엔드포인트</strong></td>
+            <td>S3, DynamoDB</td>
+            <td>무료</td>
+          </tr>
+          <tr>
+            <td><strong>인터페이스 엔드포인트</strong></td>
+            <td>대부분의 AWS 서비스</td>
+            <td>시간당 과금</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box tip">
+        <div class="info-box-title">실습에서는?</div>
+        <p>
+          VPC 엔드포인트는 이 강의의 후반부(S3, DynamoDB 사용 시)에서 필요에 따라 설정합니다.
+          지금은 "VPC에서 AWS 서비스에 직접 연결하는 방법이 있다"는 것만 알아두세요.
+          특히 S3 게이트웨이 엔드포인트는 <strong>무료</strong>이니 적극 활용하는 것이 좋습니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 실습 -->
+    <section class="content-section" id="lab">
+      <h2>실습</h2>
+
+      <div class="lab-section">
+        <div class="lab-title">실습 1: NAT 게이트웨이 생성</div>
+
+        <div class="info-box danger">
+          <div class="info-box-title">비용 주의!</div>
+          <p>
+            NAT 게이트웨이는 프리티어에 포함되지 않습니다.
+            시간당 약 $0.045가 과금됩니다. 실습 후 반드시 삭제하세요!
+            동작 확인만 하고 바로 삭제하는 것을 권장합니다.
+          </p>
+        </div>
+
+        <ol class="steps">
+          <li class="step">
+            <div class="step-title">NAT 게이트웨이 페이지 이동</div>
+            <p>VPC 콘솔 왼쪽 메뉴에서 <strong>"NAT 게이트웨이(NAT gateways)"</strong>를 클릭합니다.</p>
+            <p><strong>"NAT 게이트웨이 생성(Create NAT gateway)"</strong>을 클릭합니다.</p>
+          </li>
+
+          <li class="step">
+            <div class="step-title">NAT 게이트웨이 설정</div>
+            <ul>
+              <li><strong>이름:</strong> <code>shop-NAT-GW</code></li>
+              <li><strong>서브넷:</strong> <code>shop-public-subnet-1</code> (퍼블릭 서브넷에 위치해야 함!)</li>
+              <li><strong>연결 유형:</strong> 퍼블릭</li>
+              <li><strong>탄력적 IP 할당:</strong> <strong>"탄력적 IP 할당"</strong> 버튼을 클릭하여 새 EIP를 생성합니다</li>
+            </ul>
+            <img src="../assets/images/chapter9/create-NAT.png" alt="NAT 게이트웨이 생성">
+            <p><strong>"NAT 게이트웨이 생성"</strong>을 클릭합니다.</p>
+            <p>상태가 <strong>"Available"</strong>이 될 때까지 2~3분 기다립니다.</p>
+          </li>
+
+          <li class="step">
+            <div class="step-title">프라이빗 라우팅 테이블에 NAT 경로 추가</div>
+            <p><strong>"라우팅 테이블(Route tables)"</strong>로 이동합니다.</p>
+            <p>shop-VPC의 <strong>기본(Main) 라우팅 테이블</strong>을 선택합니다.</p>
+            <p>이 테이블의 이름을 <code>shop-private-RT</code>로 변경합니다.</p>
+            <p>(shop-private-RT를 새로 생성하여 진행함)</p>
+            <p><strong>"라우팅(Routes)"</strong> 탭 → <strong>"라우팅 편집(Edit routes)"</strong></p>
+            <p><strong>"라우팅 추가(Add route)"</strong>를 클릭:</p>
+            <ul>
+              <li><strong>대상(Destination):</strong> <code>0.0.0.0/0</code></li>
+              <li><strong>타겟(Target):</strong> "NAT 게이트웨이"를 선택하고 <code>shop-NAT-GW</code>를 선택</li>
+            </ul>
+            <p><strong>"변경 사항 저장"</strong>을 클릭합니다.</p>
+            <img src="../assets/images/chapter9/connect-NAT-RT.png" alt="NAT 게이트웨이 경로 추가">
+
+            <div class="info-box concept">
+              <div class="info-box-title">라우팅 테이블 정리</div>
+              <p>
+                이제 라우팅 테이블이 두 개입니다:<br><br>
+                <strong>ShopEasy-Public-RT:</strong> 0.0.0.0/0 → IGW (인터넷 직접 접근)<br>
+                <strong>ShopEasy-Private-RT:</strong> 0.0.0.0/0 → NAT GW (NAT를 통해 간접 접근)
+              </p>
+            </div>
+          </li>
+
+          <li class="step">
+            <div class="step-title">NAT 게이트웨이 동작 확인 (선택사항)</div>
+            <p>프라이빗 서브넷에 EC2를 임시로 만들어서 인터넷 접속이 되는지 테스트할 수 있습니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 프라이빗 EC2에 접속 후 (퍼블릭 EC2를 통해 점프)
+# 인터넷 접속 테스트
+curl -I https://www.google.com</code></pre>
+            </div>
+            <p>응답이 오면 NAT 게이트웨이가 정상 작동하는 것입니다.</p>
+          </li>
+
+          <li class="step">
+            <div class="step-title">비용 절약: NAT 게이트웨이 삭제</div>
+            <p>테스트가 끝났다면 비용 절약을 위해 NAT 게이트웨이를 삭제합니다:</p>
+            <p><strong>NAT 게이트웨이</strong> 목록에서 <code>shop-NAT-GW</code>를 선택합니다.</p>
+            <p><strong>"작업(Actions) → NAT 게이트웨이 삭제(Delete NAT gateway)"</strong>를 클릭합니다.</p>
+            <p>확인 입력 후 삭제합니다.</p>
+            <p>NAT 게이트웨이에 할당된 탄력적 IP도 <strong>릴리스</strong>합니다:</p>
+            <p><strong>VPC → 탄력적 IP</strong>에서 해당 IP를 선택 → <strong>"작업 → 탄력적 IP 주소 릴리스"</strong></p>
+            <p>프라이빗 라우팅 테이블의 NAT 경로(0.0.0.0/0 → NAT GW)도 삭제합니다.</p>
+
+            <div class="info-box warning">
+              <div class="info-box-title">나중에 필요하면 다시 만들 수 있습니다</div>
+              <p>
+                Chapter 10(VPC에 재배포)에서 프라이빗 서브넷의 리소스가 인터넷 접근이 필요하면
+                그때 다시 생성하면 됩니다. 지금은 개념 이해와 생성/삭제 경험이 목표입니다.
+              </p>
+            </div>
+          </li>
+        </ol>
+      </div>
+
+      <!-- <div class="lab-section">
+        <div class="lab-title">실습 2: 보안그룹 설계 (ALB → EC2 → RDS 체이닝)</div>
+        <ol class="steps">
+          <li class="step">
+            <div class="step-title">보안그룹 페이지 이동</div>
+            <p>VPC 콘솔 왼쪽 메뉴에서 <strong>"보안 그룹(Security groups)"</strong>을 클릭합니다.</p>
+            <p><strong>"보안 그룹 생성(Create security group)"</strong>을 클릭합니다.</p>
+          </li>
+
+          <li class="step">
+            <div class="step-title">ALB 보안그룹 생성</div>
+            <ul>
+              <li><strong>보안 그룹 이름:</strong> <code>ShopEasy-SG-ALB</code></li>
+              <li><strong>설명:</strong> <code>ALB security group - allows HTTP/HTTPS from internet</code></li>
+              <li><strong>VPC:</strong> <code>ShopEasy-VPC</code> 선택</li>
+            </ul>
+            <p><strong>인바운드 규칙:</strong></p>
+            <table>
+              <thead>
+                <tr>
+                  <th>유형</th>
+                  <th>포트</th>
+                  <th>소스</th>
+                  <th>설명</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>HTTP</td>
+                  <td>80</td>
+                  <td>0.0.0.0/0</td>
+                  <td>HTTP 접근 허용</td>
+                </tr>
+                <tr>
+                  <td>HTTPS</td>
+                  <td>443</td>
+                  <td>0.0.0.0/0</td>
+                  <td>HTTPS 접근 허용</td>
+                </tr>
+              </tbody>
+            </table>
+            <p><strong>"보안 그룹 생성"</strong>을 클릭합니다.</p>
+            <div class="screenshot-placeholder">[스크린샷: ALB 보안그룹 생성 화면]</div>
+          </li>
+
+          <li class="step">
+            <div class="step-title">EC2 보안그룹 생성</div>
+            <p>다시 <strong>"보안 그룹 생성"</strong>을 클릭합니다:</p>
+            <ul>
+              <li><strong>보안 그룹 이름:</strong> <code>ShopEasy-SG-EC2</code></li>
+              <li><strong>설명:</strong> <code>EC2 security group - allows traffic from ALB</code></li>
+              <li><strong>VPC:</strong> <code>ShopEasy-VPC</code></li>
+            </ul>
+            <p><strong>인바운드 규칙:</strong></p>
+            <table>
+              <thead>
+                <tr>
+                  <th>유형</th>
+                  <th>포트</th>
+                  <th>소스</th>
+                  <th>설명</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>사용자 지정 TCP</td>
+                  <td>5000</td>
+                  <td><strong>ShopEasy-SG-ALB</strong> (보안그룹 선택)</td>
+                  <td>ALB에서 오는 API 요청</td>
+                </tr>
+                <tr>
+                  <td>SSH</td>
+                  <td>22</td>
+                  <td>내 IP (My IP)</td>
+                  <td>관리자 SSH 접속</td>
+                </tr>
+              </tbody>
+            </table>
+            <p><strong>"보안 그룹 생성"</strong>을 클릭합니다.</p>
+
+            <div class="info-box tip">
+              <div class="info-box-title">소스에 보안그룹을 지정하는 방법</div>
+              <p>
+                인바운드 규칙의 "소스" 필드에 <code>sg-</code>를 입력하면
+                보안그룹 목록이 드롭다운으로 나타납니다.
+                여기서 <code>ShopEasy-SG-ALB</code>를 선택합니다.
+                이것이 바로 <strong>보안그룹 체이닝</strong>입니다!
+              </p>
+            </div>
+          </li>
+
+          <li class="step">
+            <div class="step-title">RDS 보안그룹 생성</div>
+            <p>다시 <strong>"보안 그룹 생성"</strong>을 클릭합니다:</p>
+            <ul>
+              <li><strong>보안 그룹 이름:</strong> <code>ShopEasy-SG-RDS</code></li>
+              <li><strong>설명:</strong> <code>RDS security group - allows MySQL from EC2</code></li>
+              <li><strong>VPC:</strong> <code>ShopEasy-VPC</code></li>
+            </ul>
+            <p><strong>인바운드 규칙:</strong></p>
+            <table>
+              <thead>
+                <tr>
+                  <th>유형</th>
+                  <th>포트</th>
+                  <th>소스</th>
+                  <th>설명</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>MySQL/Aurora</td>
+                  <td>3306</td>
+                  <td><strong>ShopEasy-SG-EC2</strong> (보안그룹 선택)</td>
+                  <td>EC2에서만 DB 접근 가능</td>
+                </tr>
+              </tbody>
+            </table>
+            <p><strong>"보안 그룹 생성"</strong>을 클릭합니다.</p>
+            <div class="screenshot-placeholder">[스크린샷: RDS 보안그룹 - EC2 보안그룹을 소스로 지정]</div>
+          </li>
+
+          <li class="step">
+            <div class="step-title">보안그룹 체이닝 확인</div>
+            <p>세 개의 보안그룹이 모두 생성되었는지 확인합니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">text</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>ShopEasy-SG-ALB  → 인터넷에서 80, 443 허용
+ShopEasy-SG-EC2  → SG-ALB에서 5000 허용, 내 IP에서 22 허용
+ShopEasy-SG-RDS  → SG-EC2에서 3306 허용</code></pre>
+            </div>
+
+            <p>이제 트래픽 흐름을 정리하면:</p>
+
+            <div class="diagram">
+              <div class="diagram-title">보안그룹 체이닝 최종 결과</div>
+
+              <div class="diagram-box user">
+                <div class="box-title">인터넷 사용자</div>
+              </div>
+              <div class="diagram-arrow down">&darr; 80/443 허용 (SG-ALB)</div>
+              <div class="diagram-box network">
+                <div class="box-title">ALB</div>
+              </div>
+              <div class="diagram-arrow down">&darr; 5000 허용 (SG-EC2, 소스: SG-ALB)</div>
+              <div class="diagram-box compute">
+                <div class="box-title">EC2 API 서버</div>
+              </div>
+              <div class="diagram-arrow down">&darr; 3306 허용 (SG-RDS, 소스: SG-EC2)</div>
+              <div class="diagram-box database">
+                <div class="box-title">RDS MySQL</div>
+              </div>
+
+              <div style="margin-top: 16px; padding: 12px; background: rgba(255,255,255,0.05); border-radius: 8px; font-size: 0.9rem; line-height: 1.8;">
+                <span style="color: #22c55e;">&#10003;</span> 인터넷 &rarr; ALB: 가능<br>
+                <span style="color: #22c55e;">&#10003;</span> ALB &rarr; EC2: 가능<br>
+                <span style="color: #22c55e;">&#10003;</span> EC2 &rarr; RDS: 가능<br>
+                <span style="color: #ef4444;">&#10007;</span> 인터넷 &rarr; EC2: 불가능 (ALB 통해서만)<br>
+                <span style="color: #ef4444;">&#10007;</span> 인터넷 &rarr; RDS: 불가능 (EC2 통해서만)<br>
+                <span style="color: #ef4444;">&#10007;</span> ALB &rarr; RDS: 불가능 (EC2 통해서만)
+              </div>
+            </div>
+
+            <div class="info-box concept">
+              <div class="info-box-title">보안 계층 요약</div>
+              <p>
+                이제 ShopEasy 서비스에 3단계 보안 계층이 만들어졌습니다:<br><br>
+                <strong>1단계 (네트워크 수준):</strong> VPC + 퍼블릭/프라이빗 서브넷 분리<br>
+                <strong>2단계 (트래픽 수준):</strong> 보안그룹 체이닝 (ALB → EC2 → RDS)<br>
+                <strong>3단계 (서비스 수준):</strong> 각 서비스는 필요한 포트만 열림<br><br>
+                다음 챕터(Chapter 10)에서 이 VPC에 실제로 ShopEasy를 배포합니다!
+              </p>
+            </div>
+          </li>
+        </ol>
+      </div> -->
+
+      <div class="info-box danger">
+        <div class="info-box-title">실습 후 비용 체크리스트</div>
+        <p>
+          <strong>1. NAT 게이트웨이:</strong> 삭제했는지 확인 (시간당 과금!)<br>
+          <strong>2. NAT에 할당한 탄력적 IP:</strong> 릴리스했는지 확인 (미사용 시 과금!)<br>
+          <strong>3. VPC, 서브넷, IGW, 보안그룹:</strong> 이것들은 비용이 발생하지 않으므로 유지해도 됩니다.<br>
+          <strong>4. 예산 알림:</strong> Chapter 07에서 설정한 예산 알림이 동작 중인지 확인
+        </p>
+      </div>
+    </section>
+
+    <!-- Navigation -->
+    <div class="chapter-nav">
+      <a href="08-vpc-basics.html" class="prev">이전: VPC 기초</a>
+      <a href="10-vpc-redeploy.html" class="next">다음: 이커머스를 VPC에 재배포</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+</html>

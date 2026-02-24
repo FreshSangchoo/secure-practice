@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CloudWatch - AWS 기초 강의</title>
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index.html" class="header-logo">
+      <span class="aws-icon">AWS</span>
+      <span>기초 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li class="sidebar-section">모니터링</li>
+      <li><a href="#why-monitoring">모니터링이 왜 중요한가?</a></li>
+      <li><a href="#cloudwatch-components">CloudWatch 구성요소</a></li>
+      <li><a href="#metrics">메트릭</a></li>
+      <li><a href="#logs">로그</a></li>
+      <li><a href="#alarms">경보</a></li>
+      <li><a href="#lab">실습</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 25</span>
+      <h1>CloudWatch</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>모니터링의 중요성과 CloudWatch의 역할을 이해한다</li>
+          <li>CloudWatch의 4가지 구성요소(메트릭, 로그, 경보, 대시보드)를 설명할 수 있다</li>
+          <li>기본 메트릭과 사용자 지정 메트릭의 차이를 이해한다</li>
+          <li>CloudWatch Logs로 애플리케이션 로그를 수집하고 검색할 수 있다</li>
+          <li>경보를 설정하여 문제 발생 시 SNS 이메일 알림을 받을 수 있다</li>
+          <li>이커머스 모니터링 대시보드를 생성할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 1: 모니터링이 왜 중요한가? -->
+    <section class="content-section" id="why-monitoring">
+      <h2>모니터링이 왜 중요한가?</h2>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 자동차 계기판</div>
+        <p>자동차를 운전할 때 계기판을 보지 않으면 어떻게 될까요? 연료가 떨어져도 모르고, 엔진 과열도 모르고, 속도 위반도 모릅니다. 결국 길 한복판에서 멈추거나 사고가 나겠죠.</p>
+        <p>서버도 마찬가지입니다. <strong>CloudWatch는 AWS의 계기판</strong>입니다. CPU 사용률, 메모리, 에러율 같은 핵심 지표를 실시간으로 보여주고, 문제가 생기면 경고를 보냅니다.</p>
+      </div>
+
+      <h3>모니터링 없이 운영하면 생기는 일</h3>
+      <table>
+        <thead>
+          <tr><th>상황</th><th>모니터링 없음</th><th>모니터링 있음</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>서버 다운</td><td>고객이 알려줄 때까지 모름 (수 시간)</td><td>1분 내 알림 → 즉시 대응</td></tr>
+          <tr><td>CPU 100%</td><td>서비스 느려짐 → 고객 이탈</td><td>80%에서 경보 → 사전 확장</td></tr>
+          <tr><td>디스크 풀</td><td>서버 장애 발생</td><td>90%에서 경보 → 사전 정리</td></tr>
+          <tr><td>비용 폭탄</td><td>월말 청구서에서 발견</td><td>예산 초과 시 즉시 알림</td></tr>
+          <tr><td>보안 위협</td><td>해킹 후 발견</td><td>비정상 트래픽 감지 → 즉시 차단</td></tr>
+        </tbody>
+      </table>
+
+      <div class="info-box danger">
+        <div class="info-box-title">실화: 모니터링 없이 운영한 사례</div>
+        <p>실무에서 모니터링 없이 서비스를 운영하다가 DB 디스크가 가득 차서 서비스가 4시간 동안 중단된 사례가 있습니다. 디스크 사용률 경보 하나만 있었다면 사전에 대응할 수 있었습니다. <strong>모니터링은 선택이 아니라 필수입니다.</strong></p>
+      </div>
+    </section>
+
+    <!-- Section 2: CloudWatch 구성요소 -->
+    <section class="content-section" id="cloudwatch-components">
+      <h2>CloudWatch 구성요소</h2>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 병원 모니터링 시스템</div>
+        <p>병원의 환자 모니터링 시스템에 비유하면:</p>
+        <ul>
+          <li><strong>메트릭(Metrics)</strong> = 심박수, 혈압, 체온 같은 수치 데이터</li>
+          <li><strong>로그(Logs)</strong> = 의사의 진료 기록 (상세한 텍스트 데이터)</li>
+          <li><strong>경보(Alarms)</strong> = 심박수가 비정상이면 울리는 알람</li>
+          <li><strong>대시보드(Dashboard)</strong> = 간호사 스테이션의 모니터 화면</li>
+        </ul>
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>구성요소</th><th>역할</th><th>예시</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><strong>메트릭</strong></td><td>시간에 따른 수치 데이터</td><td>CPU 사용률 75%, 요청 수 1,500</td></tr>
+          <tr><td><strong>로그</strong></td><td>텍스트 형태의 이벤트 기록</td><td>[ERROR] 주문 처리 실패: OrderID-123</td></tr>
+          <tr><td><strong>경보</strong></td><td>메트릭이 임계값을 넘으면 알림</td><td>CPU > 80%이면 이메일 알림</td></tr>
+          <tr><td><strong>대시보드</strong></td><td>여러 메트릭을 한 화면에 시각화</td><td>CPU, 메모리, 요청수 차트 모음</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Section 3: 메트릭 -->
+    <section class="content-section" id="metrics">
+      <h2>메트릭 (Metrics)</h2>
+
+      <h3>기본 메트릭 vs 사용자 지정 메트릭</h3>
+
+      <h4>기본 메트릭 (무료, 자동 수집)</h4>
+      <p>AWS 서비스를 사용하면 자동으로 수집되는 메트릭입니다.</p>
+      <table>
+        <thead>
+          <tr><th>서비스</th><th>주요 기본 메트릭</th><th>수집 주기</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>EC2</td><td>CPUUtilization, NetworkIn/Out, StatusCheckFailed</td><td>5분 (기본) / 1분 (세부)</td></tr>
+          <tr><td>RDS</td><td>CPUUtilization, FreeStorageSpace, ReadLatency</td><td>1분</td></tr>
+          <tr><td>ALB</td><td>RequestCount, TargetResponseTime, HTTPCode_5XX</td><td>1분</td></tr>
+          <tr><td>Lambda</td><td>Invocations, Duration, Errors, Throttles</td><td>1분</td></tr>
+          <tr><td>DynamoDB</td><td>ConsumedReadCapacityUnits, ThrottledRequests</td><td>1분</td></tr>
+        </tbody>
+      </table>
+
+      <div class="info-box warning">
+        <div class="info-box-title">중요: EC2에서 기본 제공되지 않는 메트릭</div>
+        <p>EC2의 기본 메트릭에는 <strong>메모리 사용률</strong>과 <strong>디스크 사용률</strong>이 포함되지 않습니다! 이 중요한 메트릭을 수집하려면 <strong>CloudWatch Agent</strong>를 설치해야 합니다.</p>
+      </div>
+
+      <h4>사용자 지정 메트릭 (유료)</h4>
+      <p>CloudWatch Agent나 API를 통해 직접 전송하는 메트릭입니다.</p>
+      <ul>
+        <li>메모리 사용률, 디스크 사용률</li>
+        <li>애플리케이션 수준 메트릭 (활성 사용자 수, 주문 수, 에러율 등)</li>
+        <li>비즈니스 메트릭 (매출액, 전환율 등)</li>
+      </ul>
+
+      <h3>네임스페이스, 차원, 기간</h3>
+      <ul>
+        <li><strong>네임스페이스 (Namespace)</strong>: 메트릭 그룹. 예: <code>AWS/EC2</code>, <code>AWS/RDS</code>, <code>Custom/ShopEasy</code></li>
+        <li><strong>차원 (Dimension)</strong>: 메트릭을 구분하는 키-값. 예: <code>InstanceId=i-1234567890</code></li>
+        <li><strong>기간 (Period)</strong>: 데이터 집계 간격. 예: 60초, 300초, 3600초</li>
+        <li><strong>통계 (Statistics)</strong>: Average, Sum, Maximum, Minimum, SampleCount</li>
+      </ul>
+    </section>
+
+    <!-- Section 4: 로그 -->
+    <section class="content-section" id="logs">
+      <h2>로그 (Logs)</h2>
+
+      <h3>로그 구조</h3>
+      <ul>
+        <li><strong>로그 그룹 (Log Group)</strong>: 같은 종류의 로그를 모아놓은 폴더. 예: <code>/shopeasy/api-server</code></li>
+        <li><strong>로그 스트림 (Log Stream)</strong>: 특정 소스의 로그 시퀀스. 예: 각 EC2 인스턴스별 스트림</li>
+        <li><strong>로그 이벤트 (Log Event)</strong>: 개별 로그 항목. 타임스탬프 + 메시지</li>
+      </ul>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 일기장</div>
+        <p><strong>로그 그룹</strong> = 일기장 (한 권의 책)<br>
+        <strong>로그 스트림</strong> = 각 날짜의 페이지<br>
+        <strong>로그 이벤트</strong> = 한 줄 한 줄의 기록</p>
+      </div>
+
+      <h3>로그 인사이트 (Log Insights)</h3>
+      <p>로그 인사이트는 로그 데이터를 쿼리하여 분석하는 도구입니다. SQL과 비슷한 문법을 사용합니다.</p>
+      <div class="code-block">
+        <div class="code-header"><span class="lang">text</span><button class="copy-btn">복사</button></div>
+        <pre><code># 최근 에러 로그 검색
+fields @timestamp, @message
+| filter @message like /ERROR/
+| sort @timestamp desc
+| limit 20
+
+# HTTP 상태 코드별 요청 수
+fields @timestamp, @message
+| filter @message like /HTTP/
+| parse @message "* * * * *" as method, path, status, size, time
+| stats count(*) as cnt by status
+| sort cnt desc
+
+# 느린 API 요청 찾기 (1초 이상)
+fields @timestamp, @message
+| filter @message like /response_time/
+| parse @message '"response_time":*,' as rt
+| filter rt > 1000
+| sort rt desc
+| limit 10</code></pre>
+      </div>
+
+      <h3>로그 보존 기간</h3>
+      <p>로그 그룹별로 보존 기간을 설정할 수 있습니다. 기본값은 "만료 안 함(Never expire)"이므로 비용이 계속 증가합니다.</p>
+      <table>
+        <thead>
+          <tr><th>보존 기간</th><th>용도</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>1일 ~ 7일</td><td>개발/테스트 환경</td></tr>
+          <tr><td>30일</td><td>일반 운영 로그</td></tr>
+          <tr><td>90일 ~ 1년</td><td>감사/컴플라이언스</td></tr>
+          <tr><td>만료 안 함</td><td>주의: 비용이 계속 증가!</td></tr>
+        </tbody>
+      </table>
+
+      <div class="info-box tip">
+        <div class="info-box-title">Tip: 로그 보존 기간 설정은 필수</div>
+        <p>반드시 적절한 보존 기간을 설정하세요. 실습 환경에서는 7일이면 충분합니다. 불필요한 로그가 쌓이면 스토리지 비용이 발생합니다.</p>
+      </div>
+    </section>
+
+    <!-- Section 5: 경보 -->
+    <section class="content-section" id="alarms">
+      <h2>경보 (Alarms)</h2>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 집 화재 경보기</div>
+        <p>화재 경보기는 연기(메트릭)가 일정 수준(임계값)을 넘으면 "삐~ 삐~"(알림)를 울립니다. CloudWatch 경보도 같습니다. CPU 사용률이 80%를 넘으면 이메일을 보내거나 Auto Scaling을 트리거합니다.</p>
+      </div>
+
+      <h3>경보의 3가지 상태</h3>
+      <table>
+        <thead>
+          <tr><th>상태</th><th>색상</th><th>설명</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>OK</code></td><td>초록</td><td>메트릭이 정상 범위 내</td></tr>
+          <tr><td><code>ALARM</code></td><td>빨강</td><td>메트릭이 임계값 초과 → 알림 발송</td></tr>
+          <tr><td><code>INSUFFICIENT_DATA</code></td><td>회색</td><td>데이터 부족으로 판단 불가</td></tr>
+        </tbody>
+      </table>
+
+      <h3>경보 설정 항목</h3>
+      <ul>
+        <li><strong>메트릭</strong>: 어떤 지표를 감시할 것인가 (예: CPUUtilization)</li>
+        <li><strong>통계</strong>: Average, Maximum 등</li>
+        <li><strong>기간</strong>: 몇 초 간격으로 확인 (예: 300초)</li>
+        <li><strong>임계값</strong>: 얼마를 넘으면 경보 (예: 80%)</li>
+        <li><strong>평가 기간</strong>: 연속 몇 번 넘어야 경보 (예: 2번)</li>
+        <li><strong>액션</strong>: 경보 시 어떤 동작 (SNS 알림, Auto Scaling, EC2 중지 등)</li>
+      </ul>
+
+      <div class="info-box concept">
+        <div class="info-box-title">평가 기간의 중요성</div>
+        <p>CPU가 순간적으로 80%를 넘는 것은 정상일 수 있습니다. <strong>평가 기간을 2~3회</strong>로 설정하면, 연속으로 임계값을 넘어야 경보가 발생하므로 거짓 경보(false alarm)를 줄일 수 있습니다.</p>
+      </div>
+    </section>
+
+    <!-- Lab Section -->
+    <section class="content-section" id="lab">
+      <h2>실습</h2>
+
+      <div class="info-box danger">
+        <div class="info-box-title">비용 안내</div>
+        <p>CloudWatch 기본 모니터링(5분 간격)은 무료입니다. 세부 모니터링(1분 간격), 사용자 지정 메트릭, 대시보드(3개까지 무료), 로그 저장 비용이 발생할 수 있습니다. 실습 범위에서는 크게 걱정할 필요 없지만, 로그 보존 기간은 설정하세요.</p>
+      </div>
+
+      <div class="lab-section">
+        <div class="lab-title">실습: ShopEasy 모니터링 시스템 구축</div>
+        <ol class="steps">
+
+          <!-- Step 1 -->
+          <li class="step">
+            <div class="step-title">EC2 기본 메트릭 확인</div>
+            <p>AWS 콘솔에서 <strong>CloudWatch</strong> 서비스로 이동합니다.</p>
+            <p>왼쪽 메뉴에서 <strong>Metrics</strong> > <strong>All metrics</strong>를 클릭합니다.</p>
+            <p><strong>AWS namespaces</strong>에서 <code>EC2</code>를 선택합니다.</p>
+            <p><strong>Per-Instance Metrics</strong>를 클릭합니다.</p>
+            <p>ShopEasy API 서버 인스턴스의 메트릭을 확인합니다:</p>
+            <ul>
+              <li><code>CPUUtilization</code> - CPU 사용률</li>
+              <li><code>NetworkIn</code> / <code>NetworkOut</code> - 네트워크 트래픽</li>
+              <li><code>StatusCheckFailed</code> - 상태 체크 실패</li>
+              <li><code>DiskReadOps</code> / <code>DiskWriteOps</code> - 디스크 I/O</li>
+            </ul>
+            <p>여러 메트릭에 체크하여 그래프로 확인합니다. 기간을 1시간, 3시간, 1일로 변경해봅니다.</p>
+            <div class="screenshot-placeholder">CloudWatch EC2 메트릭 그래프 화면</div>
+          </li>
+
+          <!-- Step 2 -->
+          <li class="step">
+            <div class="step-title">CloudWatch Agent 설치 (메모리/디스크 메트릭)</div>
+            <p>EC2에 SSH로 접속하여 CloudWatch Agent를 설치합니다.</p>
+
+            <h4>1) Agent 설치</h4>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># Amazon Linux 2
+sudo yum install -y amazon-cloudwatch-agent
+
+# Amazon Linux 2023
+sudo dnf install -y amazon-cloudwatch-agent</code></pre>
+            </div>
+
+            <h4>2) IAM 역할 확인</h4>
+            <p>EC2의 IAM 역할에 <code>CloudWatchAgentServerPolicy</code> 정책이 있는지 확인합니다. 없으면 추가합니다.</p>
+            <p>EC2 콘솔 > 인스턴스 선택 > <strong>Actions</strong> > <strong>Security</strong> > <strong>Modify IAM role</strong>에서 확인합니다.</p>
+
+            <h4>3) Agent 설정 파일 생성</h4>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># 설정 파일 생성
+sudo tee /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json > /dev/null << 'EOF'
+{
+    "agent": {
+        "metrics_collection_interval": 60,
+        "run_as_user": "root"
+    },
+    "metrics": {
+        "namespace": "ShopEasy/EC2",
+        "append_dimensions": {
+            "InstanceId": "${aws:InstanceId}",
+            "InstanceType": "${aws:InstanceType}"
+        },
+        "metrics_collected": {
+            "mem": {
+                "measurement": [
+                    "mem_used_percent",
+                    "mem_total",
+                    "mem_used"
+                ],
+                "metrics_collection_interval": 60
+            },
+            "disk": {
+                "measurement": [
+                    "used_percent",
+                    "total",
+                    "used"
+                ],
+                "metrics_collection_interval": 60,
+                "resources": ["/"]
+            },
+            "cpu": {
+                "measurement": [
+                    "cpu_usage_idle",
+                    "cpu_usage_user",
+                    "cpu_usage_system"
+                ],
+                "metrics_collection_interval": 60,
+                "totalcpu": true
+            }
+        }
+    },
+    "logs": {
+        "logs_collected": {
+            "files": {
+                "collect_list": [
+                    {
+                        "file_path": "/home/ec2-user/shopeasy-api/logs/*.log",
+                        "log_group_name": "/shopeasy/api-server",
+                        "log_stream_name": "{instance_id}",
+                        "timezone": "Local"
+                    }
+                ]
+            }
+        }
+    }
+}
+EOF</code></pre>
+            </div>
+
+            <h4>4) Agent 시작</h4>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># Agent 시작
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+    -a fetch-config \
+    -m ec2 \
+    -c file:/opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json \
+    -s
+
+# Agent 상태 확인
+sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a status</code></pre>
+            </div>
+            <div class="screenshot-placeholder">CloudWatch Agent 실행 상태 확인</div>
+          </li>
+
+          <!-- Step 3 -->
+          <li class="step">
+            <div class="step-title">사용자 지정 메트릭 확인</div>
+            <p>Agent 시작 후 2~3분 기다린 다음, CloudWatch 콘솔에서 확인합니다.</p>
+            <p><strong>Metrics</strong> > <strong>All metrics</strong> > <strong>Custom namespaces</strong>에서 <code>ShopEasy/EC2</code> 네임스페이스를 찾습니다.</p>
+            <p>다음 메트릭들이 수집되는 것을 확인합니다:</p>
+            <ul>
+              <li><code>mem_used_percent</code> - 메모리 사용률 (%)</li>
+              <li><code>disk_used_percent</code> - 디스크 사용률 (%)</li>
+              <li><code>cpu_usage_user</code> - CPU 사용률 (사용자 공간)</li>
+            </ul>
+            <div class="screenshot-placeholder">사용자 지정 메트릭 - 메모리, 디스크 사용률 그래프</div>
+          </li>
+
+          <!-- Step 4 -->
+          <li class="step">
+            <div class="step-title">API 서버 로그를 CloudWatch Logs로 전송</div>
+            <p>Step 2에서 Agent 설정에 로그 수집을 포함했으므로, 자동으로 API 서버 로그가 CloudWatch Logs에 전송됩니다.</p>
+            <p><strong>CloudWatch</strong> > <strong>Logs</strong> > <strong>Log groups</strong>에서 <code>/shopeasy/api-server</code> 로그 그룹을 확인합니다.</p>
+            <p>로그 그룹을 클릭하고 최신 로그 스트림을 확인합니다.</p>
+
+            <h4>로그 보존 기간 설정</h4>
+            <p>로그 그룹을 선택하고 <strong>Actions</strong> > <strong>Edit retention setting</strong>을 클릭합니다.</p>
+            <ul>
+              <li><strong>Retention setting</strong>: <code>7 days</code> (실습 환경)</li>
+            </ul>
+            <div class="screenshot-placeholder">CloudWatch Logs - API 서버 로그 확인</div>
+          </li>
+
+          <!-- Step 5 -->
+          <li class="step">
+            <div class="step-title">로그 인사이트로 에러 로그 검색</div>
+            <p><strong>CloudWatch</strong> > <strong>Logs</strong> > <strong>Logs Insights</strong>를 클릭합니다.</p>
+            <p>로그 그룹으로 <code>/shopeasy/api-server</code>를 선택합니다.</p>
+
+            <h4>쿼리 1: 최근 에러 로그</h4>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">text</span><button class="copy-btn">복사</button></div>
+              <pre><code>fields @timestamp, @message
+| filter @message like /error|ERROR|Error/
+| sort @timestamp desc
+| limit 20</code></pre>
+            </div>
+
+            <h4>쿼리 2: API 요청 통계</h4>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">text</span><button class="copy-btn">복사</button></div>
+              <pre><code>fields @timestamp, @message
+| filter @message like /GET|POST|PUT|DELETE/
+| stats count(*) as requestCount by bin(5m)
+| sort @timestamp desc</code></pre>
+            </div>
+
+            <h4>쿼리 3: 에러율 계산</h4>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">text</span><button class="copy-btn">복사</button></div>
+              <pre><code>fields @timestamp, @message
+| stats
+    count(*) as total,
+    sum(strcontains(@message, "ERROR")) as errors
+| display total, errors, (errors / total * 100) as errorRate</code></pre>
+            </div>
+
+            <p><strong>Run query</strong>를 클릭하여 결과를 확인합니다.</p>
+            <div class="screenshot-placeholder">CloudWatch Logs Insights - 에러 로그 검색 결과</div>
+          </li>
+
+          <!-- Step 6 -->
+          <li class="step">
+            <div class="step-title">CPU 경보 생성 (80% 이상 → SNS 알림)</div>
+            <p><strong>CloudWatch</strong> > <strong>Alarms</strong> > <strong>All alarms</strong> > <strong>Create alarm</strong>을 클릭합니다.</p>
+
+            <h4>Step 1: 메트릭 선택</h4>
+            <p><strong>Select metric</strong>을 클릭합니다.</p>
+            <p><strong>EC2</strong> > <strong>Per-Instance Metrics</strong>를 클릭합니다.</p>
+            <p>ShopEasy API 서버 인스턴스의 <code>CPUUtilization</code>을 선택합니다.</p>
+            <p><strong>Select metric</strong>을 클릭합니다.</p>
+
+            <h4>Step 2: 조건 설정</h4>
+            <ul>
+              <li><strong>Statistic</strong>: <code>Average</code></li>
+              <li><strong>Period</strong>: <code>5 minutes</code></li>
+              <li><strong>Threshold type</strong>: <code>Static</code></li>
+              <li><strong>Whenever CPUUtilization is</strong>: <code>Greater than</code></li>
+              <li><strong>than</strong>: <code>80</code></li>
+            </ul>
+            <p><strong>Additional configuration</strong>:</p>
+            <ul>
+              <li><strong>Datapoints to alarm</strong>: <code>2 out of 3</code> (3번 중 2번 이상 초과 시 경보)</li>
+              <li><strong>Missing data treatment</strong>: <code>Treat missing data as missing</code></li>
+            </ul>
+
+            <h4>Step 3: 액션 설정</h4>
+            <ul>
+              <li><strong>Alarm state trigger</strong>: <code>In alarm</code></li>
+              <li><strong>SNS topic</strong>: 기존 <code>shopeasy-order-notifications</code> 토픽 선택 (또는 새 토픽 생성)</li>
+            </ul>
+
+            <h4>Step 4: 경보 이름</h4>
+            <ul>
+              <li><strong>Alarm name</strong>: <code>shopeasy-api-cpu-high</code></li>
+              <li><strong>Alarm description</strong>: <code>API 서버 CPU 사용률이 80%를 초과했습니다. 확인이 필요합니다.</code></li>
+            </ul>
+
+            <p><strong>Create alarm</strong>을 클릭합니다.</p>
+            <div class="screenshot-placeholder">CPU 경보 생성 완료 화면</div>
+          </li>
+
+          <!-- Step 7 -->
+          <li class="step">
+            <div class="step-title">경보 테스트 (선택)</div>
+            <p>경보가 정상 동작하는지 확인하려면, EC2에서 인위적으로 CPU 부하를 생성합니다.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># stress 도구 설치
+sudo yum install -y stress
+
+# CPU 부하 생성 (5분간)
+stress --cpu 2 --timeout 300</code></pre>
+            </div>
+            <p>5~10분 후 이메일로 경보 알림이 오는지 확인합니다.</p>
+            <p>stress가 끝나면 경보 상태가 다시 OK로 돌아갑니다.</p>
+
+            <div class="info-box tip">
+              <div class="info-box-title">Tip: 경보 상태 수동 변경</div>
+              <p>테스트 목적으로 AWS CLI를 사용하여 경보 상태를 수동으로 변경할 수도 있습니다:</p>
+            </div>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># 경보 상태를 ALARM으로 수동 변경 (테스트)
+aws cloudwatch set-alarm-state \
+    --alarm-name "shopeasy-api-cpu-high" \
+    --state-value ALARM \
+    --state-reason "테스트 경보"</code></pre>
+            </div>
+          </li>
+
+          <!-- Step 8 -->
+          <li class="step">
+            <div class="step-title">이커머스 대시보드 생성</div>
+            <p><strong>CloudWatch</strong> > <strong>Dashboards</strong> > <strong>Create dashboard</strong>를 클릭합니다.</p>
+            <ul>
+              <li><strong>Dashboard name</strong>: <code>ShopEasy-Monitoring</code></li>
+            </ul>
+            <p><strong>Create dashboard</strong>를 클릭합니다.</p>
+
+            <h4>위젯 1: CPU 사용률</h4>
+            <p><strong>Add widget</strong> > <strong>Line</strong> (선 그래프) 선택</p>
+            <ul>
+              <li>EC2 > Per-Instance Metrics > CPUUtilization 선택</li>
+              <li>API 서버 인스턴스(들) 체크</li>
+              <li><strong>Create widget</strong></li>
+            </ul>
+
+            <h4>위젯 2: 메모리 사용률</h4>
+            <p><strong>Add widget</strong> > <strong>Line</strong></p>
+            <ul>
+              <li>Custom Namespaces > ShopEasy/EC2 > mem_used_percent</li>
+              <li><strong>Create widget</strong></li>
+            </ul>
+
+            <h4>위젯 3: ALB 요청 수</h4>
+            <p><strong>Add widget</strong> > <strong>Number</strong> (숫자 위젯)</p>
+            <ul>
+              <li>ApplicationELB > Per AppELB Metrics > RequestCount</li>
+              <li>Statistic: Sum</li>
+              <li><strong>Create widget</strong></li>
+            </ul>
+
+            <h4>위젯 4: ALB HTTP 5XX 에러</h4>
+            <p><strong>Add widget</strong> > <strong>Line</strong></p>
+            <ul>
+              <li>ApplicationELB > Per AppELB Metrics > HTTPCode_ELB_5XX_Count</li>
+              <li><strong>Create widget</strong></li>
+            </ul>
+
+            <h4>위젯 5: RDS CPU/연결 수</h4>
+            <p><strong>Add widget</strong> > <strong>Line</strong></p>
+            <ul>
+              <li>RDS > Per-Database Metrics > CPUUtilization, DatabaseConnections</li>
+              <li><strong>Create widget</strong></li>
+            </ul>
+
+            <h4>위젯 6: Lambda 에러율</h4>
+            <p><strong>Add widget</strong> > <strong>Line</strong></p>
+            <ul>
+              <li>Lambda > By Function Name > Errors, Invocations</li>
+              <li><strong>Create widget</strong></li>
+            </ul>
+
+            <p>위젯들을 드래그하여 배치를 정리하고 <strong>Save dashboard</strong>를 클릭합니다.</p>
+            <div class="screenshot-placeholder">ShopEasy 모니터링 대시보드 완성 화면</div>
+          </li>
+
+          <!-- Step 9 -->
+          <li class="step">
+            <div class="step-title">대시보드 자동 새로고침 설정</div>
+            <p>대시보드 상단의 새로고침 아이콘 옆의 드롭다운에서 <strong>Auto refresh</strong>를 활성화합니다.</p>
+            <ul>
+              <li><strong>Refresh interval</strong>: <code>1 minute</code></li>
+            </ul>
+            <p>시간 범위를 <code>1h</code> (1시간)으로 설정합니다.</p>
+            <p>이제 대시보드가 실시간으로 업데이트됩니다.</p>
+
+            <div class="info-box tip">
+              <div class="info-box-title">Tip: 대시보드 공유</div>
+              <p>대시보드를 팀원들과 공유하려면 <strong>Actions</strong> > <strong>Share dashboard</strong>를 사용합니다. IAM 사용자가 아닌 외부인에게도 공유 가능합니다.</p>
+            </div>
+          </li>
+
+        </ol>
+      </div>
+
+      <div class="info-box concept">
+        <div class="info-box-title">정리: CloudWatch 모니터링 체크리스트</div>
+        <ul>
+          <li><strong>기본 메트릭</strong> - CPU, 네트워크, 디스크 I/O (자동 수집)</li>
+          <li><strong>CloudWatch Agent</strong> - 메모리, 디스크 사용률, 애플리케이션 로그 수집</li>
+          <li><strong>로그 인사이트</strong> - 에러 로그 검색, API 요청 분석</li>
+          <li><strong>경보</strong> - CPU > 80%, 디스크 > 90%, 5XX 에러 급증 시 알림</li>
+          <li><strong>대시보드</strong> - 핵심 지표를 한 화면에서 모니터링</li>
+          <li><strong>로그 보존 기간</strong> - 반드시 설정 (불필요한 비용 방지)</li>
+        </ul>
+      </div>
+
+      <div class="info-box danger">
+        <div class="info-box-title">비용 주의 포인트</div>
+        <ul>
+          <li><strong>사용자 지정 메트릭</strong>: 메트릭당 ~$0.30/월</li>
+          <li><strong>대시보드</strong>: 3개까지 무료, 이후 대시보드당 $3/월</li>
+          <li><strong>로그 수집</strong>: 수집 $0.50/GB, 저장 $0.03/GB/월</li>
+          <li><strong>경보</strong>: 10개까지 무료, 이후 경보당 ~$0.10/월</li>
+        </ul>
+      </div>
+    </section>
+
+    <div class="chapter-nav">
+      <a href="24-elasticache.html" class="prev">이전: ElastiCache</a>
+      <a href="26-cloudformation.html" class="next">다음: CloudFormation</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+</html>

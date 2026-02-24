@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>이커머스 서비스 소개 - AWS 기초 강의</title>
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index.html" class="header-logo">
+      <span class="aws-icon">AWS</span>
+      <span>기초 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li><a href="#shop-easy">ShopEasy 쇼핑몰 소개</a></li>
+      <li><a href="#project-structure">프로젝트 구조</a></li>
+      <li><a href="#features">주요 기능</a></li>
+      <li><a href="#tech-stack">기술 스택</a></li>
+      <li><a href="#final-architecture">최종 AWS 아키텍처</a></li>
+      <li><a href="#lab">실습</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 04</span>
+      <h1>이커머스 서비스 소개</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>실습용 ShopEasy 쇼핑몰의 구조와 기능을 이해할 수 있다</li>
+          <li>프론트엔드(React)와 백엔드(Node.js) 의 역할을 구분할 수 있다</li>
+          <li>최종 AWS 아키텍처의 전체 그림을 미리 파악할 수 있다</li>
+          <li>로컬 환경에서 쇼핑몰 서비스를 실행할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ShopEasy 소개 -->
+    <section class="content-section" id="shop-easy">
+      <h2>ShopEasy 쇼핑몰 소개</h2>
+
+      <p>
+        이 강의에서는 <strong>ShopEasy</strong>라는 간단한 쇼핑몰 서비스를 AWS에 배포하면서
+        각종 클라우드 서비스를 배웁니다. 처음에는 로컬 컴퓨터에서 실행하고,
+        강의가 진행되면서 하나씩 AWS 서비스로 옮겨갑니다.
+      </p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 레고 블록 쌓기</div>
+        <p>
+          ShopEasy를 AWS에 배포하는 과정은 레고 블록을 하나씩 쌓아가는 것과 같습니다.
+          처음에는 바닥판(로컬 실행)에서 시작해서, 벽돌(EC2), 지붕(VPC), 창문(RDS), 페인트(S3),
+          간판(CloudFront)을 하나씩 추가하여 완성된 집을 만듭니다.
+          각 챕터가 하나의 레고 블록이라고 생각하세요!
+        </p>
+      </div>
+
+      <h3>왜 이커머스 서비스를 실습 소재로?</h3>
+      <ul>
+        <li><strong>실무에 가까움:</strong> 대부분의 웹 서비스가 이커머스와 유사한 구조를 가집니다</li>
+        <li><strong>다양한 AWS 서비스 활용:</strong> 서버, DB, 파일 저장, CDN, 서버리스 등 거의 모든 주요 서비스를 사용합니다</li>
+        <li><strong>이해하기 쉬움:</strong> 누구나 온라인 쇼핑 경험이 있으므로 기능을 직관적으로 이해할 수 있습니다</li>
+      </ul>
+    </section>
+
+    <!-- 프로젝트 구조 -->
+    <section class="content-section" id="project-structure">
+      <h2>프로젝트 구조</h2>
+
+      <p>ShopEasy는 <strong>프론트엔드</strong>와 <strong>API 서버</strong>로 나뉘어 있습니다.</p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 레스토랑으로 이해하기</div>
+        <p>
+          <strong>프론트엔드 = 레스토랑 홀 (손님이 보는 부분):</strong> 메뉴판, 인테리어, 테이블 배치 등
+          손님이 직접 보고 상호작용하는 공간입니다.<br><br>
+          <strong>API 서버 = 주방 (뒤에서 일하는 부분):</strong> 주문을 받고, 요리를 하고, 재료를 관리하는 곳입니다.
+          손님은 주방에 직접 가지 않고, 웨이터(API)를 통해 주문합니다.<br><br>
+          <strong>데이터베이스 = 식재료 창고:</strong> 모든 재료(데이터)가 보관되는 곳입니다.
+        </p>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">text</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>ecommerce-app/
+├── frontend/               # 프론트엔드 (React)
+│   ├── public/             # 정적 파일
+│   ├── src/
+│   │   ├── components/     # 재사용 가능한 UI 컴포넌트
+│   │   ├── pages/          # 페이지 컴포넌트
+│   │   ├── context/        # 전역 상태 관리 (장바구니 등)
+│   │   ├── api.js          # API 서버 통신 모듈
+│   │   ├── App.jsx         # 메인 앱 컴포넌트
+│   │   └── main.jsx        # 진입점
+│   └── package.json
+│
+└── api-server/             # API 서버 (Node.js + Express)
+    ├── src/
+    │   ├── app.js          # Express 앱 설정
+    │   ├── config/         # 환경 설정
+    │   ├── routes/         # API 라우트 (상품, 리뷰, 장바구니 등)
+    │   ├── services/       # 비즈니스 로직
+    │   └── middleware/     # 미들웨어 (에러 처리 등)
+    ├── data/               # SQLite DB 파일 (로컬용)
+    ├── uploads/            # 업로드된 파일 저장 (로컬용)
+    ├── seed.js             # 테스트 데이터 생성 스크립트
+    └── package.json</code></pre>
+      </div>
+
+      <h3>프론트엔드와 API 서버의 통신</h3>
+
+      <div class="diagram">
+        <div class="diagram-title">프론트엔드와 API 서버의 통신</div>
+        <div class="diagram-row">
+          <div class="diagram-box user">
+            <div class="box-title">사용자의 브라우저</div>
+            <div class="box-sub">React 앱 (프론트엔드)</div>
+            <div class="box-sub">HTML / CSS / JS</div>
+          </div>
+          <div class="diagram-col">
+            <div class="diagram-arrow">HTTP 요청 &rarr;</div>
+            <div class="diagram-arrow">&larr; 응답 (JSON)</div>
+          </div>
+          <div class="diagram-box compute">
+            <div class="box-title">Node.js API 서버</div>
+            <div class="box-sub">Express.js</div>
+          </div>
+        </div>
+        <div class="diagram-arrow down">&darr;</div>
+        <div class="diagram-box database">
+          <div class="box-title">데이터베이스</div>
+          <div class="box-sub">SQLite / RDS</div>
+        </div>
+      </div>
+
+      <div class="info-box concept">
+        <div class="info-box-title">API란?</div>
+        <p>
+          API(Application Programming Interface)는 프로그램들이 서로 대화하는 방법입니다.
+          프론트엔드가 "상품 목록을 주세요"라고 <strong>요청(Request)</strong>하면,
+          API 서버가 데이터베이스에서 데이터를 가져와 JSON 형태로 <strong>응답(Response)</strong>합니다.<br><br>
+          예시: <code>GET /api/products</code> → 상품 목록 반환<br>
+          예시: <code>POST /api/cart</code> → 장바구니에 상품 추가
+        </p>
+      </div>
+    </section>
+
+    <!-- 주요 기능 -->
+    <section class="content-section" id="features">
+      <h2>주요 기능</h2>
+
+      <p>ShopEasy는 다음과 같은 기능을 제공합니다. 각 기능이 어떤 AWS 서비스와 연결되는지 미리 살펴봅시다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>기능</th>
+            <th>설명</th>
+            <th>관련 AWS 서비스</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>상품 목록</strong></td>
+            <td>전체 상품을 카드 형태로 표시</td>
+            <td>EC2 (API), RDS (데이터)</td>
+          </tr>
+          <tr>
+            <td><strong>상품 상세</strong></td>
+            <td>개별 상품의 정보, 가격, 설명 표시</td>
+            <td>EC2, RDS</td>
+          </tr>
+          <tr>
+            <td><strong>리뷰 (글+사진)</strong></td>
+            <td>상품에 대한 텍스트 리뷰와 사진 리뷰 작성</td>
+            <td>DynamoDB (리뷰 데이터), S3 (리뷰 사진)</td>
+          </tr>
+          <tr>
+            <td><strong>장바구니</strong></td>
+            <td>상품을 장바구니에 담고 수량 조절</td>
+            <td>EC2, RDS</td>
+          </tr>
+          <tr>
+            <td><strong>가짜 구매</strong></td>
+            <td>결제 시뮬레이션 (실제 결제 없음)</td>
+            <td>SQS (주문 처리), SNS (알림)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box tip">
+        <div class="info-box-title">처음에는 간단하게, 나중에 확장</div>
+        <p>
+          처음(Chapter 05~06)에는 모든 것을 EC2 하나에서 실행합니다.
+          강의가 진행되면서 데이터베이스를 RDS로, 파일 저장을 S3로, 프론트엔드를 CloudFront로
+          하나씩 분리해 나갑니다. 이 과정에서 자연스럽게 "왜 이 서비스가 필요한가?"를 체감하게 됩니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 기술 스택 -->
+    <section class="content-section" id="tech-stack">
+      <h2>기술 스택</h2>
+
+      <h3>프론트엔드</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>기술</th>
+            <th>용도</th>
+            <th>설명</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>React</strong></td>
+            <td>UI 프레임워크</td>
+            <td>사용자 화면을 구성하는 JavaScript 라이브러리</td>
+          </tr>
+          <tr>
+            <td><strong>Vite</strong></td>
+            <td>빌드 도구</td>
+            <td>빠른 개발 서버 및 빌드</td>
+          </tr>
+          <tr>
+            <td><strong>React Router</strong></td>
+            <td>페이지 이동</td>
+            <td>URL에 따라 다른 페이지 표시</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>API 서버</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>기술</th>
+            <th>용도</th>
+            <th>설명</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Node.js</strong></td>
+            <td>서버 런타임</td>
+            <td>JavaScript로 서버를 만들 수 있게 해주는 플랫폼</td>
+          </tr>
+          <tr>
+            <td><strong>Express.js</strong></td>
+            <td>웹 프레임워크</td>
+            <td>API 라우팅, 미들웨어 등을 처리</td>
+          </tr>
+          <tr>
+            <td><strong>SQLite</strong></td>
+            <td>로컬 데이터베이스</td>
+            <td>설치 없이 파일 하나로 동작하는 가벼운 DB (AWS에서는 RDS로 전환)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 왜 프론트엔드와 백엔드를 나누나요?</div>
+        <p>
+          마트에서 쇼핑할 때를 생각해보세요.<br>
+          <strong>프론트엔드 = 매장:</strong> 예쁜 진열대, 가격표, 카트 → 손님이 보고 만지는 부분<br>
+          <strong>백엔드 = 물류 창고:</strong> 재고 관리, 입출고, 회계 → 뒤에서 돌아가는 시스템<br><br>
+          매장 디자인을 바꿔도 창고 시스템은 그대로이고,
+          창고 시스템을 업그레이드해도 매장은 그대로입니다.
+          이렇게 분리하면 독립적으로 관리할 수 있어서 효율적입니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 최종 아키텍처 -->
+    <section class="content-section" id="final-architecture">
+      <h2>최종 AWS 아키텍처 미리보기</h2>
+
+      <p>이 강의를 모두 마치면 아래와 같은 아키텍처가 완성됩니다. 지금은 전체 그림만 파악하면 됩니다.</p>
+
+      <div class="diagram">
+        <div class="diagram-title">최종 AWS 아키텍처</div>
+
+        <div class="diagram-box user">
+          <div class="box-title">사용자 브라우저</div>
+        </div>
+        <div class="diagram-arrow down">&darr;</div>
+        <div class="diagram-box cdn">
+          <div class="box-title">CloudFront (CDN)</div>
+          <div class="box-sub">캐싱 &amp; 빠른 전달</div>
+        </div>
+
+        <div class="diagram-arrow down">&darr;</div>
+
+        <div class="diagram-row" style="align-items: flex-start;">
+          <div class="diagram-box storage">
+            <div class="box-title">S3</div>
+            <div class="box-sub">정적 파일</div>
+          </div>
+
+          <div class="diagram-group vpc" style="flex: 2;">
+            <div class="diagram-group-label">VPC (가상 네트워크)</div>
+            <div class="diagram-group subnet-pub">
+              <div class="diagram-group-label">퍼블릭 서브넷</div>
+              <div class="diagram-box network">
+                <div class="box-title">ALB</div>
+                <div class="box-sub">로드밸런서</div>
+              </div>
+              <div class="diagram-arrow down">&darr;</div>
+              <div class="diagram-box compute">
+                <div class="box-title">EC2 (API 서버)</div>
+                <div class="box-sub">Node.js + Express</div>
+              </div>
+            </div>
+            <div class="diagram-arrow down">&darr;</div>
+            <div class="diagram-group subnet-priv">
+              <div class="diagram-group-label">프라이빗 서브넷</div>
+              <div class="diagram-row">
+                <div class="diagram-box database">
+                  <div class="box-title">RDS</div>
+                  <div class="box-sub">MySQL</div>
+                </div>
+                <div class="diagram-box database">
+                  <div class="box-title">DynamoDB</div>
+                  <div class="box-sub">리뷰</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 16px; border-top: 1px dashed #555; padding-top: 16px;">
+          <div class="diagram-row">
+            <div class="diagram-box storage">
+              <div class="box-title">S3</div>
+              <div class="box-sub">리뷰 사진</div>
+            </div>
+            <div class="diagram-box serverless">
+              <div class="box-title">Lambda</div>
+              <div class="box-sub">리사이징</div>
+            </div>
+            <div class="diagram-box monitor">
+              <div class="box-title">CloudWatch</div>
+            </div>
+            <div class="diagram-box queue">
+              <div class="box-title">SQS / SNS</div>
+              <div class="box-sub">알림</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3>배포 과정 로드맵</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>단계</th>
+            <th>챕터</th>
+            <th>내용</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>Ch.04 (지금)</td>
+            <td>로컬에서 실행 확인</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>Ch.05~06</td>
+            <td>EC2에 API 서버 + 프론트엔드 배포</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>Ch.07</td>
+            <td>탄력적 IP 연결 & 비용 관리</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Ch.08~09</td>
+            <td>VPC 네트워크 설계</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>Ch.10~12</td>
+            <td>VPC에 재배포 + ALB + Auto Scaling</td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>Ch.13~15</td>
+            <td>RDS로 데이터베이스 전환</td>
+          </tr>
+          <tr>
+            <td>7</td>
+            <td>Ch.16~17</td>
+            <td>DynamoDB(리뷰) + S3(리뷰 사진)</td>
+          </tr>
+          <tr>
+            <td>8</td>
+            <td>Ch.18~19</td>
+            <td>S3 정적 호스팅 + CloudFront</td>
+          </tr>
+          <tr>
+            <td>9</td>
+            <td>Ch.20~22</td>
+            <td>Lambda + API Gateway (서버리스)</td>
+          </tr>
+          <tr>
+            <td>10</td>
+            <td>Ch.23~26</td>
+            <td>SQS/SNS, ElastiCache, CloudWatch, CloudFormation</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">한 번에 이해할 필요 없습니다!</div>
+        <p>
+          위 아키텍처가 복잡해 보여도 전혀 걱정하지 마세요.
+          각 챕터에서 하나의 서비스를 충분히 설명하고 실습한 후에 다음으로 넘어갑니다.
+          지금은 "아, 이런 전체 그림이구나" 정도만 파악하면 됩니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 실습 -->
+    <section class="content-section" id="lab">
+      <h2>실습</h2>
+
+      <div class="lab-section">
+        <div class="lab-title">실습: 로컬에서 ShopEasy 실행하기</div>
+
+        <div class="info-box warning">
+          <div class="info-box-title">사전 준비물</div>
+          <p>
+            아래 소프트웨어가 설치되어 있어야 합니다:<br>
+            - <strong>Node.js</strong> (v18 이상): <code>https://nodejs.org</code>에서 LTS 버전 다운로드<br>
+            - <strong>Git</strong>: <code>https://git-scm.com</code>에서 다운로드<br>
+            - 설치 확인: 터미널에서 <code>node --version</code> 과 <code>git --version</code> 실행
+          </p>
+        </div>
+
+        <ol class="steps">
+          <li class="step">
+            <div class="step-title">프로젝트 코드 다운로드</div>
+            <p>터미널을 열고 원하는 디렉토리에서 Git으로 코드를 클론합니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>git clone https://github.com/your-org/ecommerce-app.git
+cd ecommerce-app</code></pre>
+            </div>
+            <div class="info-box tip">
+              <div class="info-box-title">Git 사용이 어려운 경우</div>
+              <p>강사가 USB 또는 메일로 전달한 ZIP 파일을 압축 해제하여 사용해도 됩니다.</p>
+            </div>
+          </li>
+
+          <li class="step">
+            <div class="step-title">API 서버 설치 및 실행</div>
+            <p>먼저 API 서버의 의존성을 설치합니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>cd api-server
+npm install</code></pre>
+            </div>
+            <p>테스트 데이터를 생성합니다 (상품, 리뷰 등의 샘플 데이터):</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>npm run seed</code></pre>
+            </div>
+            <p>API 서버를 시작합니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>npm run dev</code></pre>
+            </div>
+            <p>정상적으로 실행되면 다음과 비슷한 메시지가 표시됩니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">text</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>Server is running on port 5000
+Database connected successfully</code></pre>
+            </div>
+          </li>
+
+          <li class="step">
+            <div class="step-title">API 서버 동작 확인</div>
+            <p>웹 브라우저를 열고 다음 URL에 접속합니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">text</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>http://localhost:5000/api/health</code></pre>
+            </div>
+            <p><code>{"status": "ok"}</code>와 비슷한 응답이 나오면 API 서버가 정상입니다.</p>
+            <p>상품 목록도 확인해봅시다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">text</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>http://localhost:5000/api/products</code></pre>
+            </div>
+            <p>JSON 형태의 상품 데이터가 표시되면 성공입니다!</p>
+            <div class="screenshot-placeholder">[스크린샷: 브라우저에서 /api/products 응답 확인]</div>
+          </li>
+
+          <li class="step">
+            <div class="step-title">프론트엔드 설치 및 실행</div>
+            <p><strong>새로운 터미널 창</strong>을 열고 (API 서버는 계속 실행 상태 유지) 프론트엔드를 설치합니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>cd ecommerce-app/frontend
+npm install</code></pre>
+            </div>
+            <p>프론트엔드 개발 서버를 시작합니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>npm run dev</code></pre>
+            </div>
+            <p>다음과 비슷한 메시지가 표시됩니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">text</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>  VITE v5.x.x  ready in xxx ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose</code></pre>
+            </div>
+          </li>
+
+          <li class="step">
+            <div class="step-title">쇼핑몰 확인</div>
+            <p>웹 브라우저에서 <code>http://localhost:5173</code>에 접속합니다.</p>
+            <p>ShopEasy 쇼핑몰 화면이 나타나면 성공입니다!</p>
+            <div class="screenshot-placeholder">[스크린샷: ShopEasy 메인 화면 - 상품 목록이 표시된 모습]</div>
+            <p>다음을 확인해보세요:</p>
+            <ul>
+              <li>상품 목록이 정상적으로 표시되나요?</li>
+              <li>상품을 클릭하면 상세 페이지로 이동하나요?</li>
+              <li>장바구니에 상품을 담을 수 있나요?</li>
+              <li>리뷰를 작성할 수 있나요?</li>
+            </ul>
+          </li>
+
+          <li class="step">
+            <div class="step-title">서비스 종료</div>
+            <p>실습이 끝나면 각 터미널에서 <code>Ctrl + C</code>를 눌러 서버를 종료합니다.</p>
+            <div class="info-box tip">
+              <div class="info-box-title">현재 구조 정리</div>
+              <p>
+                현재 로컬에서 실행 중인 구조:<br>
+                - 프론트엔드: <code>http://localhost:5173</code> (React 개발 서버)<br>
+                - API 서버: <code>http://localhost:5000</code> (Node.js Express)<br>
+                - 데이터베이스: SQLite (api-server/data/ 폴더 안의 파일)<br><br>
+                다음 챕터부터 이 서비스를 AWS EC2에 올려보겠습니다!
+              </p>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- Navigation -->
+    <div class="chapter-nav">
+      <a href="03-console-cli.html" class="prev">이전: AWS 관리 콘솔 & CLI</a>
+      <a href="05-ec2-api-deploy.html" class="next">다음: EC2 기초 & API 서버 배포</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+</html>
