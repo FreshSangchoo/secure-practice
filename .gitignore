@@ -61,3 +61,5 @@ Desktop.ini
 coverage/
 .nyc_output/
 .env.backup
+
+package-lock.json
