@@ -253,25 +253,8 @@
               <p>실무에서는 2대의 서버를 <strong>서로 다른 가용영역(AZ)</strong>에 배치합니다. 한 AZ가 장애나도 다른 AZ의 서버가 요청을 처리할 수 있기 때문입니다. 프라이빗 서브넷을 2개 AZ에 만들어두었다면 각각 하나씩 배치하세요.</p>
             </div>
 
-            <p>새 인스턴스에도 동일하게 API 서버를 배포합니다 (Bastion Host 경유 SSH 접속 후):</p>
-            <div class="code-block">
-              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
-              <pre><code># ShopEasy-API-2에 SSH 접속 후 동일하게 설정
-curl -fsSL https://rpm.nodesource.com/setup_18.x | sudo bash -
-sudo dnf install -y nodejs git
-git clone https://github.com/your-repo/ecommerce-app.git
-cd ecommerce-app/api-server
-npm install
-cat > .env &lt;&lt;'EOF'
-PORT=5000
-DB_TYPE=sqlite
-NODE_ENV=production
-EOF
-sudo npm install -g pm2
-pm2 start npm --name "shopeasy-api" -- start
-pm2 startup
-pm2 save</code></pre>
-            </div>
+            <p>새 인스턴스에도 동일하게 API 서버를 배포합니다 (Bastion Host 경유):</p>
+
             <div class="screenshot-placeholder">[스크린샷: EC2 인스턴스 목록 - API 서버 2대 확인]</div>
           </li>
 
