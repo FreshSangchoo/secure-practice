@@ -395,17 +395,11 @@ ZREVRANGE product-ranking 0 2 WITHSCORES
             <p>API 서버 EC2에 SSH로 접속하여 Redis에 연결 테스트를 합니다.</p>
             <div class="code-block">
               <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
-              <pre><code># redis-cli 설치 (Amazon Linux 2)
-sudo amazon-linux-extras install redis6 -y
+              <pre><code># Amazon Linux 2023
+sudo dnf install redis6 -y
 
-# 또는 Amazon Linux 2023
-sudo dnf install redis6 -y</code></pre>
-            </div>
-
-            <div class="code-block">
-              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
-              <pre><code># Redis 접속 테스트
-redis-cli -h shopeasy-redis.abc123.0001.apn2.cache.amazonaws.com -p 6379
+# Redis 접속 테스트
+redis6-cli --tls -h shop-redis-app0e7.serverless.apn2.cache.amazonaws.com -p 6379
 
 # 접속 성공하면 다음 명령어 테스트
 > PING
@@ -431,7 +425,6 @@ OK
 
 > EXIT</code></pre>
             </div>
-            <div class="screenshot-placeholder">EC2에서 redis-cli로 ElastiCache 접속 테스트</div>
           </li>
 
           <!-- Step 6 -->
