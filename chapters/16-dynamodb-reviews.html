@@ -232,8 +232,8 @@
             </ul>
 
             <p><strong>Create table</strong> 클릭</p>
-
-            <div class="screenshot-placeholder">[스크린샷: DynamoDB 테이블 생성 설정]</div>
+            <img src="../assets/images/chapter16/create-table1.png" alt="DynamoDB 테이블 생성 설정" />
+            <img src="../assets/images/chapter16/create-table2.png" alt="DynamoDB 테이블 생성 설정" />
 
             <div class="info-box tip">
               <div class="info-box-title">테이블 생성은 몇 초면 됩니다!</div>
@@ -303,8 +303,7 @@
               <div class="info-box-title">비유로 이해하기: 유연한 스키마</div>
               <p>RDS에서는 "photos 열"을 정의하면 모든 행에 이 열이 있어야 합니다 (NULL이라도). 하지만 DynamoDB에서는 사진이 없는 리뷰에는 photos 속성 자체를 안 넣어도 됩니다. 마치 자유 노트에 필요한 내용만 적는 것과 같죠.</p>
             </div>
-
-            <div class="screenshot-placeholder">[스크린샷: DynamoDB 아이템 추가 화면]</div>
+            <img src="../assets/images/chapter16/create-item1.png" alt="DynamoDB 아이템 추가 화면" />
           </li>
 
           <!-- Step 3 -->
@@ -322,8 +321,7 @@
               <li><strong>Run</strong> 클릭</li>
             </ul>
             <p>상품 ID가 "1"인 모든 리뷰가 정렬 키(createdAt) 순서로 표시됩니다.</p>
-
-            <div class="screenshot-placeholder">[스크린샷: DynamoDB Query 결과 - 상품 1의 리뷰 목록]</div>
+            <img src="../assets/images/chapter16/lookup-list.png" alt="DynamoDB Query 결과 - 상품 1의 리뷰 목록" />
 
             <div class="info-box concept">
               <div class="info-box-title">Scan vs Query</div>
@@ -407,7 +405,7 @@ aws iam add-role-to-instance-profile \
               <li><strong>IAM role</strong>: <code>EC2-ShopEasy-Role</code></li>
             </ul>
             <p><strong>Update IAM role</strong> 클릭</p>
-            <div class="screenshot-placeholder">[스크린샷: EC2에 IAM 역할 연결]</div>
+            <img src="../assets/images/chapter16/update-iam-permission.png" alt="EC2에 IAM 역할 연결" />
           </li>
 
           <!-- Step 5 -->
@@ -437,24 +435,14 @@ cat .env</code></pre>
               <pre><code># AWS SDK 설치 (DynamoDB 클라이언트)
 npm install @aws-sdk/client-dynamodb @aws-sdk/lib-dynamodb</code></pre>
             </div>
-          </li>
-
-          <!-- Step 6 -->
-          <li class="step">
-            <div class="step-title">API 서버 재시작</div>
             <div class="code-block">
               <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
               <pre><code># API 서버 재시작
-pm2 restart shopeasy-api
-
-# 로그 확인
-pm2 logs shopeasy-api --lines 20
-
-# "Review store: DynamoDB" 또는 유사한 메시지 확인</code></pre>
+pm2 restart shopeasy-api</code></pre>
             </div>
           </li>
 
-          <!-- Step 7 -->
+          <!-- Step 6 -->
           <li class="step">
             <div class="step-title">브라우저에서 리뷰 작성 및 DynamoDB 확인</div>
             <p>브라우저에서 ShopEasy에 접속하여 상품 상세 페이지에서 리뷰를 작성합니다.</p>
@@ -470,12 +458,11 @@ pm2 logs shopeasy-api --lines 20
               <li>리뷰 등록 버튼 클릭</li>
               <li>페이지에서 리뷰가 표시되는지 확인</li>
             </ol>
-            <div class="screenshot-placeholder">[스크린샷: 브라우저에서 리뷰 작성]</div>
-
+            <img src="../assets/images/chapter16/review-in-web.png" alt="브라우저에서 리뷰 작성 화면" />
             <p>DynamoDB 콘솔에서 데이터를 확인합니다:</p>
             <p><strong>AWS 콘솔 &rarr; DynamoDB &rarr; Tables &rarr; Reviews &rarr; Explore table items</strong></p>
             <p>브라우저에서 작성한 리뷰가 DynamoDB에 저장된 것을 확인합니다.</p>
-            <div class="screenshot-placeholder">[스크린샷: DynamoDB 콘솔에서 새 리뷰 확인]</div>
+            <img src="../assets/images/chapter16/create-review-in-web.png" alt="브라우저에서 리뷰 작성" />
 
             <div class="info-box tip">
               <div class="info-box-title">성공 확인 포인트</div>

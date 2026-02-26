@@ -298,7 +298,7 @@ https://ecommerce-review-photos-hong.s3.ap-northeast-2.amazonaws.com/review-phot
               <p>학습에서는 <code>"*"</code>(모든 도메인 허용)을 사용하지만, 실무에서는 <code>["https://www.yourshop.com"]</code>처럼 실제 프론트엔드 도메인만 허용해야 합니다.</p>
             </div>
 
-            <div class="screenshot-placeholder">[스크린샷: CORS 설정 화면]</div>
+            <img src="../assets/images/chapter17/cors-setting.png" alt="CORS 설정 화면">
           </li>
 
           <!-- Step 3 -->
@@ -311,30 +311,12 @@ https://ecommerce-review-photos-hong.s3.ap-northeast-2.amazonaws.com/review-phot
               <li><code>AmazonS3FullAccess</code> 검색 후 체크</li>
               <li><strong>Attach policies</strong> 클릭</li>
             </ul>
+            <img src="../assets/images/chapter17/add-permission.png" alt="IAM 역할에 S3 권한 추가 화면">
 
             <div class="info-box tip">
               <div class="info-box-title">실무에서는 최소 권한 원칙</div>
               <p>학습에서는 <code>AmazonS3FullAccess</code>를 사용하지만, 실무에서는 특정 버킷에 대한 최소한의 권한만 부여합니다:</p>
             </div>
-
-            <div class="code-block">
-              <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
-              <pre><code>{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "s3:PutObject",
-        "s3:GetObject",
-        "s3:DeleteObject"
-      ],
-      "Resource": "arn:aws:s3:::ecommerce-review-photos-hong/*"
-    }
-  ]
-}</code></pre>
-            </div>
-            <div class="screenshot-placeholder">[스크린샷: IAM 역할에 S3 권한 추가]</div>
           </li>
 
           <!-- Step 4 -->
@@ -364,20 +346,10 @@ cat .env</code></pre>
               <pre><code># S3 SDK 설치 (이미 @aws-sdk/client-s3가 있을 수 있음)
 npm install @aws-sdk/client-s3 @aws-sdk/s3-request-presigner</code></pre>
             </div>
-          </li>
-
-          <!-- Step 5 -->
-          <li class="step">
-            <div class="step-title">API 서버 재시작</div>
             <div class="code-block">
               <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
               <pre><code># API 서버 재시작
-pm2 restart shopeasy-api
-
-# 로그 확인
-pm2 logs shopeasy-api --lines 20
-
-# "Storage: S3" 또는 유사한 메시지 확인</code></pre>
+  pm2 restart shopeasy-api</code></pre>
             </div>
           </li>
 
@@ -397,7 +369,7 @@ pm2 logs shopeasy-api --lines 20
               <li>리뷰 등록 클릭</li>
               <li>리뷰 목록에서 사진이 포함된 리뷰가 표시되는지 확인</li>
             </ol>
-            <div class="screenshot-placeholder">[스크린샷: 브라우저에서 사진 포함 리뷰 작성]</div>
+            <img src="../assets/images/chapter17/review-web.png" alt="브라우저에서 사진 포함 리뷰 작성 화면">
           </li>
 
           <!-- Step 7 -->
@@ -410,7 +382,7 @@ pm2 logs shopeasy-api --lines 20
               <li>사진 파일을 클릭하면 메타데이터(크기, 타입 등)를 확인할 수 있습니다</li>
               <li><strong>Object URL</strong>을 복사하여 브라우저에 붙여넣으면 접근 거부됩니다 (퍼블릭 차단이 정상)</li>
             </ul>
-            <div class="screenshot-placeholder">[스크린샷: S3 콘솔에서 업로드된 사진 확인]</div>
+            <img src="../assets/images/chapter17/object-s3.png" alt="S3 콘솔에서 업로드된 사진 확인 화면">
 
             <div class="info-box tip">
               <div class="info-box-title">파일은 Pre-signed URL로만 접근 가능</div>
@@ -455,7 +427,6 @@ aws s3api head-object \
 # 버킷 용량 확인
 aws s3 ls s3://ecommerce-review-photos-hong/ --recursive --summarize</code></pre>
             </div>
-            <div class="screenshot-placeholder">[스크린샷: AWS CLI로 S3 파일 목록 확인]</div>
           </li>
         </ol>
       </div>
