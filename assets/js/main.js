@@ -1,29 +1,25 @@
 /* ========================================
-   AWS 기초 강의자료 - 공통 JavaScript
+   AWS 클라우드 보안 강의자료 - 공통 JavaScript
    ======================================== */
 
 document.addEventListener('DOMContentLoaded', () => {
   initCopyButtons();
   initSidebarHighlight();
-  initAnchorSmoothScroll();
 });
 
 /* 코드 블록 복사 버튼 */
 function initCopyButtons() {
   document.querySelectorAll('.copy-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const codeBlock = btn.closest('.code-block');
-      const code = codeBlock ? codeBlock.querySelector('code') : null;
-      if (code && navigator.clipboard) {
-        navigator.clipboard.writeText(code.textContent).then(() => {
-          btn.textContent = '복사됨!';
-          btn.classList.add('copied');
-          setTimeout(() => {
-            btn.textContent = '복사';
-            btn.classList.remove('copied');
-          }, 2000);
-        });
-      }
+      const code = btn.closest('.code-block').querySelector('code').textContent;
+      navigator.clipboard.writeText(code).then(() => {
+        btn.textContent = '복사됨!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = '복사';
+          btn.classList.remove('copied');
+        }, 2000);
+      });
     });
   });
 }
@@ -45,19 +41,4 @@ function initSidebarHighlight() {
   }, { rootMargin: '-20% 0px -60% 0px' });
 
   sections.forEach(section => observer.observe(section));
-}
-
-/* 앵커 링크 스무스 스크롤 */
-function initAnchorSmoothScroll() {
-  document.querySelectorAll('a[href^="#"]').forEach(link => {
-    link.addEventListener('click', (e) => {
-      const href = link.getAttribute('href');
-      if (href === '#') return;
-      const target = document.querySelector(href);
-      if (target) {
-        e.preventDefault();
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    });
-  });
 }

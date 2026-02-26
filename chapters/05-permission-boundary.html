@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/05-permission-boundary.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>권한 경계 & 최소 권한 설계 - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li><a href="#permission-boundary">Permission Boundary 개념</a></li>
+      <li><a href="#access-analyzer">IAM Access Analyzer</a></li>
+      <li><a href="#service-linked-role">서비스 연결 역할</a></li>
+      <li><a href="#least-privilege">최소 권한 설계 원칙</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 05</span>
+      <h1>권한 경계 & 최소 권한 설계</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>Permission Boundary의 개념과 동작 원리를 이해한다</li>
+          <li>자격증명 정책과 권한 경계의 교집합 원리를 설명할 수 있다</li>
+          <li>IAM Access Analyzer를 활용하여 외부 접근과 미사용 권한을 탐지할 수 있다</li>
+          <li>Service-linked Role의 특징과 용도를 이해한다</li>
+          <li>최소 권한 원칙에 기반한 점진적 권한 축소 전략을 수립할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ==================== Section 1: Permission Boundary ==================== -->
+    <section class="content-section" id="permission-boundary">
+      <h2>Permission Boundary 개념</h2>
+
+      <h3>권한 경계란 무엇인가</h3>
+      <p>
+        Permission Boundary(권한 경계)는 IAM 사용자 또는 역할에 부여할 수 있는 <strong>최대 권한의 상한선</strong>을 설정하는 고급 IAM 기능입니다.
+        일반적인 IAM 정책이 "무엇을 할 수 있는가"를 정의한다면, 권한 경계는 "아무리 많은 권한을 부여해도 이 범위를 넘을 수 없다"는 울타리를 설정합니다.
+      </p>
+
+      <div class="info-box concept">
+        <div class="info-box-title">핵심 개념: Permission Boundary</div>
+        <p>
+          Permission Boundary는 <strong>관리형 정책(Managed Policy)</strong>을 사용하여 IAM 엔터티의 최대 권한을 제한합니다.
+          권한 경계 자체는 권한을 부여하지 않으며, 다른 정책에서 부여한 권한 중 경계 내에 있는 것만 유효하게 만듭니다.
+        </p>
+      </div>
+
+      <p>
+        권한 경계가 특히 유용한 상황은 <strong>권한 위임(delegation)</strong>입니다.
+        예를 들어, ShopEasy 프로젝트에서 팀 리더가 주니어 개발자에게 IAM 사용자를 만들 수 있는 권한을 위임한다고 가정합시다.
+        권한 경계 없이 위임하면, 주니어 개발자가 자신보다 더 많은 권한을 가진 사용자를 생성하는 <strong>권한 에스컬레이션</strong>이 발생할 수 있습니다.
+      </p>
+
+      <h3>자격증명 정책과 권한 경계의 교집합</h3>
+      <p>
+        IAM에서 최종 유효 권한은 다음 요소의 <strong>교집합(intersection)</strong>으로 결정됩니다:
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>정책 유형</th>
+            <th>역할</th>
+            <th>예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>자격증명 기반 정책 (Identity-based)</strong></td>
+            <td>사용자/역할에 직접 부여하는 권한</td>
+            <td>AmazonS3FullAccess</td>
+          </tr>
+          <tr>
+            <td><strong>권한 경계 (Permission Boundary)</strong></td>
+            <td>최대 권한의 상한선</td>
+            <td>S3 + DynamoDB만 허용</td>
+          </tr>
+          <tr>
+            <td><strong>유효 권한 (Effective Permission)</strong></td>
+            <td>두 정책의 교집합</td>
+            <td>S3만 유효 (교집합)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="diagram">
+        <div class="diagram-title">자격증명 정책과 권한 경계의 교집합</div>
+        <div class="diagram-row">
+          <div class="diagram-box iam">
+            <strong>자격증명 정책</strong><br>
+            S3 Full Access<br>
+            EC2 Full Access<br>
+            DynamoDB Read
+          </div>
+          <div class="diagram-box security">
+            <strong>&#x2229; 교집합</strong><br>
+            유효 권한 결정
+          </div>
+          <div class="diagram-box iam">
+            <strong>권한 경계</strong><br>
+            S3 Full Access<br>
+            DynamoDB Full Access<br>
+            CloudWatch Read
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box compute">
+            <strong>유효 권한 (결과)</strong><br>
+            S3 Full Access &#x2705;<br>
+            DynamoDB Read &#x2705;<br>
+            <span style="text-decoration: line-through;">EC2 Full Access</span> &#x274C;<br>
+            <span style="text-decoration: line-through;">CloudWatch Read</span> &#x274C;
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: "위임은 하되, 범위를 제한한다"</div>
+        <p>
+          권한 경계를 <strong>사무실 출입 카드</strong>에 비유할 수 있습니다.
+          회사에서 신입사원에게 전체 건물의 출입 카드를 줄 때, 카드 자체에 "3층~5층만 접근 가능"이라는 제한을 걸어둡니다.
+          이후 팀장이 "서버실도 출입 가능"이라는 추가 권한을 요청하더라도, 서버실이 2층에 있다면 카드의 제한(3~5층) 때문에 접근이 불가능합니다.
+        </p>
+        <p>
+          이처럼 권한 경계는 "아무리 많은 정책을 붙여도 이 범위를 넘을 수 없다"는 <strong>물리적 울타리</strong> 역할을 합니다.
+        </p>
+      </div>
+
+      <h3>권한 경계의 실제 사용 시나리오</h3>
+      <p>ShopEasy 이커머스 앱에서 권한 경계가 필요한 대표적인 시나리오를 살펴보겠습니다:</p>
+
+      <div class="info-box tip">
+        <div class="info-box-title">ShopEasy 시나리오</div>
+        <p>
+          ShopEasy 프로젝트의 DevOps 팀 리더가 각 개발자에게 IAM 역할을 생성할 수 있는 권한을 줍니다.
+          그러나 개발자가 만드는 역할은 반드시 <code>shopeasy-</code> 접두사를 가져야 하며,
+          S3와 DynamoDB에만 접근할 수 있도록 권한 경계를 설정합니다.
+        </p>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowS3AndDynamoDB",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:ListBucket",
+        "s3:DeleteObject",
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem"
+      ],
+      "Resource": [
+        "arn:aws:s3:::shopeasy-*",
+        "arn:aws:s3:::shopeasy-*/*",
+        "arn:aws:dynamodb:ap-northeast-2:123456789012:table/shopeasy-*"
+      ]
+    },
+    {
+      "Sid": "AllowCloudWatchLogging",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:ap-northeast-2:123456789012:*"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <p>위 정책을 <code>ShopEasyBoundary</code>라는 이름으로 저장하고, 이를 개발자가 만드는 모든 역할에 권한 경계로 적용합니다.</p>
+
+      <h3>권한 경계 적용 조건 강제하기</h3>
+      <p>
+        개발자가 IAM 역할을 만들 때 반드시 권한 경계를 적용하도록 강제하는 정책을 만들 수 있습니다:
+      </p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowCreateRoleWithBoundary",
+      "Effect": "Allow",
+      "Action": "iam:CreateRole",
+      "Resource": "arn:aws:iam::123456789012:role/shopeasy-*",
+      "Condition": {
+        "StringEquals": {
+          "iam:PermissionsBoundary": "arn:aws:iam::123456789012:policy/ShopEasyBoundary"
+        }
+      }
+    },
+    {
+      "Sid": "DenyRemoveBoundary",
+      "Effect": "Deny",
+      "Action": [
+        "iam:DeleteRolePermissionsBoundary",
+        "iam:PutRolePermissionsBoundary"
+      ],
+      "Resource": "arn:aws:iam::123456789012:role/shopeasy-*"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">주의: 권한 경계 우회 방지</div>
+        <p>
+          권한 경계를 설정할 때 반드시 <strong>경계 삭제/수정 권한도 함께 차단</strong>해야 합니다.
+          그렇지 않으면 개발자가 자신이 만든 역할의 권한 경계를 제거하여 우회할 수 있습니다.
+          위 예제의 <code>DenyRemoveBoundary</code> 구문이 이를 방지합니다.
+        </p>
+      </div>
+
+      <!-- Lab: Permission Boundary 설정 -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: Permission Boundary 설정 실습</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">Step 1: 권한 경계 정책 생성</div>
+            <p>AWS CLI를 사용하여 ShopEasy 프로젝트용 권한 경계 정책을 생성합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 권한 경계 정책 JSON 파일 생성
+cat &gt; shopeasy-boundary-policy.json &lt;&lt; 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowS3AndDynamoDB",
+      "Effect": "Allow",
+      "Action": [
+        "s3:*",
+        "dynamodb:*",
+        "logs:*",
+        "cloudwatch:*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyIAMChanges",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateUser",
+        "iam:DeleteUser",
+        "iam:CreateRole",
+        "iam:DeleteRole"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+
+# 정책 생성
+aws iam create-policy \
+  --policy-name ShopEasyBoundary \
+  --policy-document file://shopeasy-boundary-policy.json \
+  --description "ShopEasy 프로젝트 권한 경계"</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 2: IAM 사용자에 권한 경계 적용</div>
+            <p>생성한 권한 경계를 개발자 사용자에게 적용합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 개발자 사용자에게 권한 경계 적용
+aws iam put-user-permissions-boundary \
+  --user-name shopeasy-developer \
+  --permissions-boundary "arn:aws:iam::123456789012:policy/ShopEasyBoundary"
+
+# 적용 확인
+aws iam get-user --user-name shopeasy-developer</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 3: 권한 경계 동작 테스트</div>
+            <p>권한 경계가 올바르게 동작하는지 테스트합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 개발자 프로필로 S3 접근 테스트 (성공해야 함)
+aws s3 ls s3://shopeasy-product-images --profile shopeasy-developer
+
+# 개발자 프로필로 IAM 사용자 생성 시도 (실패해야 함)
+aws iam create-user --user-name test-user --profile shopeasy-developer
+# 예상 결과: An error occurred (AccessDenied)</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 4: IAM 역할에 권한 경계 적용</div>
+            <p>역할 생성 시 권한 경계를 함께 지정합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 신뢰 정책 생성
+cat &gt; trust-policy.json &lt;&lt; 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+
+# 권한 경계를 포함하여 역할 생성
+aws iam create-role \
+  --role-name shopeasy-api-role \
+  --assume-role-policy-document file://trust-policy.json \
+  --permissions-boundary "arn:aws:iam::123456789012:policy/ShopEasyBoundary"
+
+# 역할에 정책 연결
+aws iam attach-role-policy \
+  --role-name shopeasy-api-role \
+  --policy-arn "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+
+# 결과: S3 전체 권한을 부여했지만, 권한 경계에 의해 실제로는 경계 내의 S3 작업만 가능</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== Section 2: IAM Access Analyzer ==================== -->
+    <section class="content-section" id="access-analyzer">
+      <h2>IAM Access Analyzer</h2>
+
+      <h3>Access Analyzer 개념</h3>
+      <p>
+        IAM Access Analyzer는 AWS 리소스에 대한 <strong>외부 접근(external access)</strong>을 자동으로 분석하고 탐지하는 서비스입니다.
+        S3 버킷, IAM 역할, KMS 키, Lambda 함수, SQS 큐 등의 리소스 정책을 분석하여
+        <strong>의도하지 않은 외부 공유</strong>가 없는지 확인합니다.
+      </p>
+
+      <div class="info-box concept">
+        <div class="info-box-title">Access Analyzer의 두 가지 분석 유형</div>
+        <p>
+          <strong>1. 외부 접근 분석 (External Access):</strong> AWS 계정 또는 Organization 외부에서 접근 가능한 리소스를 탐지합니다.<br>
+          <strong>2. 미사용 접근 분석 (Unused Access):</strong> 일정 기간 사용하지 않은 권한, 역할, Access Key를 탐지합니다.
+        </p>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">IAM Access Analyzer 동작 구조</div>
+        <div class="diagram-row">
+          <div class="diagram-box detective">
+            <strong>Access Analyzer</strong><br>
+            자동화된 정책 분석
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box storage">
+            <strong>S3 버킷</strong><br>
+            퍼블릭 접근 탐지
+          </div>
+          <div class="diagram-box iam">
+            <strong>IAM 역할</strong><br>
+            교차 계정 신뢰 탐지
+          </div>
+          <div class="diagram-box encryption">
+            <strong>KMS 키</strong><br>
+            외부 공유 탐지
+          </div>
+          <div class="diagram-box serverless">
+            <strong>Lambda</strong><br>
+            외부 호출 권한 탐지
+          </div>
+          <div class="diagram-box queue">
+            <strong>SQS 큐</strong><br>
+            외부 접근 탐지
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box monitor">
+            <strong>결과 (Findings)</strong><br>
+            활성 | 아카이브 | 해결됨
+          </div>
+        </div>
+      </div>
+
+      <h3>분석 대상 리소스</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>리소스 유형</th>
+            <th>분석 내용</th>
+            <th>ShopEasy 예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>S3 버킷</td>
+            <td>버킷 정책, ACL의 퍼블릭/교차 계정 접근</td>
+            <td>상품 이미지 버킷이 실수로 퍼블릭 공개된 경우</td>
+          </tr>
+          <tr>
+            <td>IAM 역할</td>
+            <td>신뢰 정책의 외부 계정 접근</td>
+            <td>파트너사에 임시 부여한 역할이 아직 활성화된 경우</td>
+          </tr>
+          <tr>
+            <td>KMS 키</td>
+            <td>키 정책의 외부 공유</td>
+            <td>암호화 키가 다른 계정에서 사용 가능한 경우</td>
+          </tr>
+          <tr>
+            <td>Lambda 함수</td>
+            <td>리소스 정책의 외부 호출 권한</td>
+            <td>주문 처리 Lambda가 외부에서 호출 가능한 경우</td>
+          </tr>
+          <tr>
+            <td>SQS 큐</td>
+            <td>큐 정책의 외부 접근</td>
+            <td>주문 큐가 외부 계정에서 메시지 전송 가능한 경우</td>
+          </tr>
+          <tr>
+            <td>Secrets Manager</td>
+            <td>시크릿 정책의 외부 공유</td>
+            <td>DB 비밀번호가 외부에서 조회 가능한 경우</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>미사용 권한 탐지 기능</h3>
+      <p>
+        Access Analyzer의 미사용 접근 분석은 CloudTrail 로그를 기반으로
+        <strong>실제로 사용되지 않는 권한</strong>을 식별합니다.
+        이는 최소 권한 원칙을 달성하는 데 매우 중요한 기능입니다.
+      </p>
+
+      <div class="info-box tip">
+        <div class="info-box-title">미사용 권한 탐지 항목</div>
+        <p>
+          <strong>미사용 역할:</strong> 지정된 기간(예: 90일) 동안 assume되지 않은 역할<br>
+          <strong>미사용 IAM 사용자 자격증명:</strong> 오래된 비밀번호, 사용하지 않는 Access Key<br>
+          <strong>미사용 권한:</strong> 부여되었지만 실제로 호출하지 않은 서비스/액션
+        </p>
+      </div>
+
+      <h3>정책 생성 지원 (CloudTrail 기반)</h3>
+      <p>
+        Access Analyzer는 CloudTrail 로그를 분석하여 <strong>실제 사용 패턴에 기반한 정책</strong>을 자동으로 생성해 줍니다.
+        이를 통해 "처음에 넓은 권한을 부여하고 나중에 줄이는" 전략을 자동화할 수 있습니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 정책 생성 시작 (CloudTrail 기반)
+aws accessanalyzer start-policy-generation \
+  --policy-generation-details '{
+    "principalArn": "arn:aws:iam::123456789012:role/shopeasy-api-role"
+  }' \
+  --cloud-trail-details '{
+    "trails": [
+      {
+        "cloudTrailArn": "arn:aws:cloudtrail:ap-northeast-2:123456789012:trail/management-trail",
+        "allRegions": true
+      }
+    ],
+    "accessRole": "arn:aws:iam::123456789012:role/AccessAnalyzerRole",
+    "startTime": "2025-11-01T00:00:00Z",
+    "endTime": "2026-02-01T00:00:00Z"
+  }'
+
+# 생성 상태 확인
+aws accessanalyzer get-generated-policy \
+  --job-id "생성된-job-id"</code></pre>
+      </div>
+
+      <!-- Lab: Access Analyzer -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: Access Analyzer 활성화 및 결과 확인</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">Step 1: Access Analyzer 생성 (외부 접근 분석)</div>
+            <p>AWS Management Console 또는 CLI로 Access Analyzer를 생성합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 외부 접근 분석용 Analyzer 생성
+aws accessanalyzer create-analyzer \
+  --analyzer-name shopeasy-external-access \
+  --type ACCOUNT \
+  --tags "Project=ShopEasy,Environment=Production"
+
+# 생성 확인
+aws accessanalyzer list-analyzers</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 2: 미사용 접근 분석 Analyzer 생성</div>
+            <p>미사용 권한을 탐지하는 Analyzer를 추가로 생성합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 미사용 접근 분석용 Analyzer 생성 (90일 기준)
+aws accessanalyzer create-analyzer \
+  --analyzer-name shopeasy-unused-access \
+  --type ACCOUNT_UNUSED_ACCESS \
+  --configuration '{
+    "unusedAccess": {
+      "unusedAccessAge": 90
+    }
+  }'</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 3: 분석 결과(Findings) 확인</div>
+            <p>Analyzer가 탐지한 결과를 확인합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 활성 Finding 목록 조회
+aws accessanalyzer list-findings \
+  --analyzer-arn "arn:aws:access-analyzer:ap-northeast-2:123456789012:analyzer/shopeasy-external-access" \
+  --filter '{
+    "status": {
+      "eq": ["ACTIVE"]
+    }
+  }'
+
+# 특정 Finding 상세 정보 확인
+aws accessanalyzer get-finding \
+  --analyzer-arn "arn:aws:access-analyzer:ap-northeast-2:123456789012:analyzer/shopeasy-external-access" \
+  --id "finding-id-here"</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 4: Finding 해결 또는 아카이브</div>
+            <p>의도된 접근인 경우 아카이브하고, 의도하지 않은 접근은 수정합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 의도된 접근인 경우 아카이브 처리
+aws accessanalyzer update-findings \
+  --analyzer-arn "arn:aws:access-analyzer:ap-northeast-2:123456789012:analyzer/shopeasy-external-access" \
+  --ids "finding-id-here" \
+  --status ARCHIVED
+
+# 아카이브 규칙 생성 (특정 패턴 자동 아카이브)
+aws accessanalyzer create-archive-rule \
+  --analyzer-name shopeasy-external-access \
+  --rule-name "trusted-partner-access" \
+  --filter '{
+    "principal.AWS": {
+      "eq": ["arn:aws:iam::987654321098:root"]
+    }
+  }'</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== Section 3: Service-linked Role ==================== -->
+    <section class="content-section" id="service-linked-role">
+      <h2>서비스 연결 역할 (Service-linked Role)</h2>
+
+      <h3>Service-linked Role이란</h3>
+      <p>
+        서비스 연결 역할(Service-linked Role, SLR)은 AWS 서비스가 사용자를 대신하여 다른 AWS 서비스를 호출할 수 있도록
+        <strong>AWS에 의해 사전 정의된 IAM 역할</strong>입니다. 일반적인 IAM 역할과 달리, 사용자가 정책을 수정할 수 없으며
+        AWS 서비스에 의해 자동으로 생성되고 관리됩니다.
+      </p>
+
+      <div class="info-box concept">
+        <div class="info-box-title">Service-linked Role의 핵심 특징</div>
+        <p>
+          <strong>1. 자동 생성:</strong> 서비스를 처음 사용하거나 특정 기능을 활성화하면 자동으로 생성됩니다.<br>
+          <strong>2. 정책 수정 불가:</strong> 역할에 연결된 정책은 AWS가 관리하며, 사용자가 수정할 수 없습니다.<br>
+          <strong>3. 삭제 제한:</strong> 해당 서비스의 모든 리소스를 정리한 후에만 삭제할 수 있습니다.<br>
+          <strong>4. 이름 규칙:</strong> <code>AWSServiceRoleFor&lt;서비스명&gt;</code> 형식입니다.
+        </p>
+      </div>
+
+      <h3>주요 서비스의 Service-linked Role 목록</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>AWS 서비스</th>
+            <th>역할 이름</th>
+            <th>용도</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Elastic Load Balancing</td>
+            <td>AWSServiceRoleForElasticLoadBalancing</td>
+            <td>ALB/NLB가 EC2 인스턴스 상태 확인 및 트래픽 라우팅</td>
+          </tr>
+          <tr>
+            <td>Auto Scaling</td>
+            <td>AWSServiceRoleForAutoScaling</td>
+            <td>Auto Scaling이 EC2 인스턴스 시작/종료</td>
+          </tr>
+          <tr>
+            <td>Amazon RDS</td>
+            <td>AWSServiceRoleForRDS</td>
+            <td>RDS가 네트워크, 로그, 모니터링 관리</td>
+          </tr>
+          <tr>
+            <td>AWS Config</td>
+            <td>AWSServiceRoleForConfig</td>
+            <td>Config가 리소스 구성 변경 기록</td>
+          </tr>
+          <tr>
+            <td>Amazon GuardDuty</td>
+            <td>AWSServiceRoleForAmazonGuardDuty</td>
+            <td>GuardDuty가 CloudTrail, VPC Flow Logs 분석</td>
+          </tr>
+          <tr>
+            <td>AWS WAF</td>
+            <td>AWSServiceRoleForWAFV2Logging</td>
+            <td>WAF 로그를 S3, CloudWatch, Firehose로 전송</td>
+          </tr>
+          <tr>
+            <td>Amazon CloudFront</td>
+            <td>AWSServiceRoleForCloudFrontLogger</td>
+            <td>CloudFront가 실시간 로그 전송</td>
+          </tr>
+          <tr>
+            <td>AWS Organizations</td>
+            <td>AWSServiceRoleForOrganizations</td>
+            <td>Organizations가 계정 관리 및 SCP 적용</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box tip">
+        <div class="info-box-title">ShopEasy에서 만나는 Service-linked Role</div>
+        <p>
+          ShopEasy 앱을 배포하면서 자동으로 생성되는 SLR은 다음과 같습니다:<br>
+          - <strong>ELB SLR:</strong> ALB를 생성할 때 자동 생성<br>
+          - <strong>Auto Scaling SLR:</strong> ASG를 구성할 때 자동 생성<br>
+          - <strong>RDS SLR:</strong> RDS 인스턴스를 생성할 때 자동 생성<br>
+          이 역할들은 건드리지 않는 것이 좋으며, 서비스 삭제 후에 정리됩니다.
+        </p>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 현재 계정의 Service-linked Role 목록 확인
+aws iam list-roles \
+  --query "Roles[?starts_with(Path, '/aws-service-role/')].[RoleName,Path,Description]" \
+  --output table
+
+# 특정 Service-linked Role 상세 정보
+aws iam get-role --role-name AWSServiceRoleForElasticLoadBalancing
+
+# Service-linked Role에 연결된 정책 확인
+aws iam list-attached-role-policies \
+  --role-name AWSServiceRoleForElasticLoadBalancing</code></pre>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">Service-linked Role 삭제 시 주의사항</div>
+        <p>
+          Service-linked Role을 삭제하려면 해당 서비스의 모든 리소스가 먼저 삭제되어야 합니다.
+          예를 들어, ELB의 SLR을 삭제하려면 모든 로드 밸런서를 먼저 삭제해야 합니다.
+          리소스가 남아 있으면 삭제 시 에러가 발생합니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== Section 4: 최소 권한 설계 원칙 ==================== -->
+    <section class="content-section" id="least-privilege">
+      <h2>최소 권한 설계 원칙과 점진적 축소</h2>
+
+      <h3>처음에 넓게, 점점 좁히기 전략</h3>
+      <p>
+        최소 권한 원칙(Principle of Least Privilege)은 "각 주체에게 작업 수행에 필요한 최소한의 권한만 부여한다"는 보안 원칙입니다.
+        하지만 실무에서는 처음부터 정확한 최소 권한을 알기 어렵습니다.
+        따라서 <strong>점진적 축소(progressive refinement)</strong> 전략이 효과적입니다.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">점진적 권한 축소 프로세스</div>
+        <div class="diagram-row">
+          <div class="diagram-box iam">
+            <strong>Phase 1: 개발 단계</strong><br>
+            넓은 관리형 정책 부여<br>
+            예: AmazonS3FullAccess
+          </div>
+          <div class="diagram-box detective">
+            <strong>Phase 2: 모니터링</strong><br>
+            CloudTrail로<br>
+            실제 사용 권한 기록
+          </div>
+          <div class="diagram-box security">
+            <strong>Phase 3: 분석</strong><br>
+            Access Analyzer로<br>
+            미사용 권한 탐지
+          </div>
+          <div class="diagram-box encryption">
+            <strong>Phase 4: 축소</strong><br>
+            실제 사용 권한만<br>
+            포함한 커스텀 정책
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">모범 사례: 점진적 축소의 4단계</div>
+        <p>
+          <strong>1단계 - 넓은 권한으로 시작:</strong> 개발/테스트 단계에서는 AWS 관리형 정책을 활용하여 빠르게 시작합니다.<br>
+          <strong>2단계 - 활동 로깅:</strong> CloudTrail을 활성화하고 최소 30~90일간 실제 API 호출을 기록합니다.<br>
+          <strong>3단계 - 분석:</strong> Access Analyzer의 정책 생성 기능으로 실제 사용 패턴 기반 정책을 생성합니다.<br>
+          <strong>4단계 - 적용:</strong> 생성된 커스텀 정책으로 교체하고, 기존 넓은 정책을 제거합니다.
+        </p>
+      </div>
+
+      <h3>CloudTrail 기반 실제 사용 권한 분석</h3>
+      <p>
+        CloudTrail은 AWS 계정의 모든 API 호출을 기록합니다. 이 데이터를 분석하면
+        특정 역할이나 사용자가 실제로 어떤 권한을 사용했는지 정확히 파악할 수 있습니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 특정 사용자의 최근 API 호출 이벤트 조회
+aws cloudtrail lookup-events \
+  --lookup-attributes AttributeKey=Username,AttributeValue=shopeasy-api-user \
+  --start-time "2026-01-01T00:00:00Z" \
+  --end-time "2026-02-19T00:00:00Z" \
+  --query "Events[].{Time:EventTime,Event:EventName,Source:EventSource}" \
+  --output table
+
+# S3 관련 이벤트만 필터링
+aws cloudtrail lookup-events \
+  --lookup-attributes AttributeKey=EventSource,AttributeValue=s3.amazonaws.com \
+  --start-time "2026-01-01T00:00:00Z" \
+  --query "Events[?Username=='shopeasy-api-user'].{Event:EventName,Time:EventTime}" \
+  --output table</code></pre>
+      </div>
+
+      <h3>ShopEasy API 서버의 실제 권한 분석 예시</h3>
+      <p>90일간의 CloudTrail 로그를 분석한 결과, ShopEasy API 서버가 실제로 사용한 권한 목록:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>서비스</th>
+            <th>실제 사용 액션</th>
+            <th>사용 빈도</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>S3</td>
+            <td>PutObject, GetObject, DeleteObject</td>
+            <td>높음 (하루 수백 회)</td>
+          </tr>
+          <tr>
+            <td>S3</td>
+            <td>ListBucket</td>
+            <td>보통 (하루 수십 회)</td>
+          </tr>
+          <tr>
+            <td>DynamoDB</td>
+            <td>GetItem, PutItem, Query</td>
+            <td>높음 (하루 수천 회)</td>
+          </tr>
+          <tr>
+            <td>SQS</td>
+            <td>SendMessage, ReceiveMessage, DeleteMessage</td>
+            <td>보통 (하루 수백 회)</td>
+          </tr>
+          <tr>
+            <td>CloudWatch Logs</td>
+            <td>CreateLogStream, PutLogEvents</td>
+            <td>높음 (지속적)</td>
+          </tr>
+          <tr>
+            <td><span style="text-decoration:line-through;">EC2</span></td>
+            <td>없음</td>
+            <td>미사용 (제거 대상)</td>
+          </tr>
+          <tr>
+            <td><span style="text-decoration:line-through;">IAM</span></td>
+            <td>없음</td>
+            <td>미사용 (제거 대상)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>분석 결과 기반 최적화 정책</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "S3ProductImages",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::shopeasy-product-images/*"
+    },
+    {
+      "Sid": "S3ListBucket",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::shopeasy-product-images"
+    },
+    {
+      "Sid": "DynamoDBSessions",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:Query"
+      ],
+      "Resource": "arn:aws:dynamodb:ap-northeast-2:123456789012:table/shopeasy-sessions"
+    },
+    {
+      "Sid": "SQSOrderQueue",
+      "Effect": "Allow",
+      "Action": [
+        "sqs:SendMessage",
+        "sqs:ReceiveMessage",
+        "sqs:DeleteMessage",
+        "sqs:GetQueueAttributes"
+      ],
+      "Resource": "arn:aws:sqs:ap-northeast-2:123456789012:shopeasy-order-queue"
+    },
+    {
+      "Sid": "CloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:ap-northeast-2:123456789012:log-group:/shopeasy/*"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>정책 생성 모범 사례</h3>
+      <div class="info-box best-practice">
+        <div class="info-box-title">IAM 정책 작성 체크리스트</div>
+        <p>
+          <strong>리소스 수준 제한:</strong> <code>"Resource": "*"</code>를 피하고 특정 ARN을 지정합니다.<br>
+          <strong>조건 키 활용:</strong> IP 제한, MFA 요구, 태그 기반 접근 제어를 조건으로 추가합니다.<br>
+          <strong>와일드카드 최소화:</strong> <code>s3:*</code> 대신 <code>s3:GetObject</code>, <code>s3:PutObject</code>로 구체적으로 지정합니다.<br>
+          <strong>Deny 우선:</strong> 민감한 리소스에 대해 명시적 Deny 정책을 추가합니다.<br>
+          <strong>정기 검토:</strong> 분기별로 미사용 권한을 검토하고 제거합니다.
+        </p>
+      </div>
+
+      <h3>실무 팁과 체크리스트</h3>
+      <div class="info-box tip">
+        <div class="info-box-title">최소 권한 설계 실무 체크리스트</div>
+        <p>
+          &#x2610; 모든 IAM 사용자/역할에 태그를 붙여 관리하고 있는가?<br>
+          &#x2610; CloudTrail이 모든 리전에서 활성화되어 있는가?<br>
+          &#x2610; Access Analyzer가 활성화되어 있는가?<br>
+          &#x2610; 90일 이상 미사용 Access Key가 없는가?<br>
+          &#x2610; 루트 계정에 MFA가 설정되어 있는가?<br>
+          &#x2610; AWS 관리형 정책 대신 커스텀 정책을 사용하고 있는가?<br>
+          &#x2610; <code>"Resource": "*"</code>를 사용하는 정책이 없는가?<br>
+          &#x2610; 정기적인 권한 검토 일정이 있는가?<br>
+          &#x2610; 퇴사자/이동자의 권한이 즉시 제거되는 프로세스가 있는가?<br>
+          &#x2610; 긴급 상황용 Break-glass 계정이 준비되어 있는가?
+        </p>
+      </div>
+
+      <div class="info-box danger">
+        <div class="info-box-title">흔한 실수: 과도한 권한 부여</div>
+        <p>
+          <strong>실수 1:</strong> 개발 편의를 위해 <code>AdministratorAccess</code>를 부여하고 그대로 운영<br>
+          <strong>실수 2:</strong> <code>"Action": "*", "Resource": "*"</code>로 인라인 정책 작성<br>
+          <strong>실수 3:</strong> 퇴사자의 Access Key를 비활성화하지 않고 방치<br>
+          <strong>실수 4:</strong> 하나의 역할에 모든 서비스 권한을 몰아넣기<br>
+          <strong>실수 5:</strong> 권한 경계 없이 IAM 역할 생성 권한 위임
+        </p>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 미사용 Access Key 탐지 (90일 이상 미사용)
+aws iam generate-credential-report
+aws iam get-credential-report \
+  --query 'Content' --output text | base64 --decode | \
+  awk -F',' 'NR>1 {
+    if ($11 != "N/A" && $11 != "not_supported") {
+      print "User:", $1, "| Key Last Used:", $11
+    }
+  }'
+
+# 특정 사용자의 인라인 정책 확인
+aws iam list-user-policies --user-name shopeasy-developer
+
+# 특정 역할에 연결된 모든 정책 확인
+aws iam list-attached-role-policies --role-name shopeasy-api-role
+aws iam list-role-policies --role-name shopeasy-api-role</code></pre>
+      </div>
+
+    </section>
+
+    <div class="chapter-nav">
+      <a href="04-iam-roles-sts.html" class="prev">이전: IAM 역할 & 임시 자격증명</a>
+      <a href="06-ecommerce-iam-lab.html" class="next">다음: 이커머스 IAM 설계 실습</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/05-permission-boundary.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>

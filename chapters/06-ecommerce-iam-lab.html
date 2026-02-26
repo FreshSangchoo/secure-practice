@@ -1,0 +1,1308 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/06-ecommerce-iam-lab.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>이커머스 IAM 설계 실습 - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li><a href="#instance-profile-migration">인스턴스 프로파일 전환</a></li>
+      <li><a href="#role-separation">역할 분리 설계</a></li>
+      <li><a href="#iam-groups">IAM 그룹 & 정책 설계</a></li>
+      <li><a href="#mfa-enforcement">MFA 강제 정책</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 06</span>
+      <h1>이커머스 IAM 설계 실습</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>EC2의 Access Key 하드코딩을 인스턴스 프로파일로 전환할 수 있다</li>
+          <li>서비스별 역할 분리 원칙을 이해하고 적용할 수 있다</li>
+          <li>개발자/운영자/관리자 IAM 그룹을 설계하고 정책을 작성할 수 있다</li>
+          <li>MFA 강제 정책을 구현하고 테스트할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ==================== Section 1: Instance Profile Migration ==================== -->
+    <section class="content-section" id="instance-profile-migration">
+      <h2>ShopEasy EC2 - 인스턴스 프로파일 전환</h2>
+
+      <h3>현재 상태: Access Key가 .env에 하드코딩</h3>
+      <p>
+        ShopEasy 이커머스 앱의 현재 구조를 살펴보면, EC2 인스턴스에서 실행되는 API 서버가
+        AWS 서비스(S3, DynamoDB, SQS)에 접근하기 위해 <strong>.env 파일에 Access Key를 직접 입력</strong>하고 있습니다.
+        이는 가장 흔하면서도 가장 위험한 보안 안티패턴 중 하나입니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># ShopEasy API 서버의 현재 .env 파일 (보안 위험!)
+# ===================================
+# AWS 자격증명 (하드코딩 - 위험!)
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+AWS_REGION=ap-northeast-2
+
+# S3 설정
+S3_BUCKET=shopeasy-product-images
+
+# DynamoDB 설정
+DYNAMODB_TABLE=shopeasy-sessions
+
+# SQS 설정
+SQS_QUEUE_URL=https://sqs.ap-northeast-2.amazonaws.com/123456789012/shopeasy-order-queue</code></pre>
+      </div>
+
+      <div class="info-box danger">
+        <div class="info-box-title">하드코딩된 Access Key의 위험성</div>
+        <p>
+          <strong>유출 위험:</strong> .env 파일이 Git에 커밋되거나, 로그에 노출되거나, 서버가 해킹당하면 키가 유출됩니다.<br>
+          <strong>로테이션 어려움:</strong> 키를 변경하려면 모든 서버의 .env 파일을 수동으로 업데이트해야 합니다.<br>
+          <strong>권한 과다:</strong> IAM 사용자에게 장기 자격증명을 부여하면 필요 이상의 권한이 유지됩니다.<br>
+          <strong>감사 추적 어려움:</strong> 여러 서버에서 같은 키를 사용하면 어느 서버에서 호출했는지 구분이 어렵습니다.<br>
+          <strong>만료 없음:</strong> Access Key는 명시적으로 비활성화/삭제하지 않는 한 영구적으로 유효합니다.
+        </p>
+      </div>
+
+      <h3>목표: 인스턴스 프로파일로 전환</h3>
+      <p>
+        인스턴스 프로파일(Instance Profile)은 EC2 인스턴스에 IAM 역할을 연결하는 메커니즘입니다.
+        인스턴스 프로파일을 사용하면 EC2 내의 애플리케이션이 <strong>별도의 자격증명 없이</strong>
+        IAM 역할의 임시 자격증명을 자동으로 받아 AWS 서비스에 접근할 수 있습니다.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">Before vs After: 자격증명 관리 방식 비교</div>
+        <div class="diagram-row">
+          <div class="diagram-group vpc">
+            <div class="diagram-box compute">
+              <strong>Before (위험)</strong><br>
+              EC2 Instance
+            </div>
+            <div class="diagram-box security">
+              .env 파일<br>
+              ACCESS_KEY=AKIA...<br>
+              SECRET_KEY=wJal...
+            </div>
+            <div class="diagram-box iam">
+              IAM User<br>
+              장기 자격증명<br>
+              (만료 없음)
+            </div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-group vpc">
+            <div class="diagram-box compute">
+              <strong>After (안전)</strong><br>
+              EC2 Instance
+            </div>
+            <div class="diagram-box security">
+              Instance Profile<br>
+              (자동 연결)
+            </div>
+            <div class="diagram-box iam">
+              IAM Role<br>
+              임시 자격증명<br>
+              (자동 갱신, 최대 6시간)
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box concept">
+        <div class="info-box-title">인스턴스 프로파일의 동작 원리</div>
+        <p>
+          EC2 인스턴스에 인스턴스 프로파일을 연결하면, 인스턴스 메타데이터 서비스(IMDS)를 통해
+          임시 자격증명을 자동으로 받을 수 있습니다. AWS SDK는 자격증명을 찾을 때
+          환경변수 -> 공유 자격증명 파일 -> <strong>인스턴스 프로파일</strong> 순서로 탐색합니다.
+          따라서 .env에서 키를 제거하면 자동으로 인스턴스 프로파일의 자격증명을 사용합니다.
+        </p>
+      </div>
+
+      <!-- Lab: Instance Profile -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: 인스턴스 프로파일 생성 및 연결</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">Step 1: IAM 역할 생성 (EC2 신뢰 정책)</div>
+            <p>EC2가 assume할 수 있는 IAM 역할을 생성합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 신뢰 정책 파일 생성
+cat &gt; ec2-trust-policy.json &lt;&lt; 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+
+# IAM 역할 생성
+aws iam create-role \
+  --role-name ShopEasy-EC2-ApiServer-Role \
+  --assume-role-policy-document file://ec2-trust-policy.json \
+  --description "ShopEasy API 서버용 EC2 역할" \
+  --tags Key=Project,Value=ShopEasy Key=Environment,Value=Production</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 2: 필요한 권한 정책 생성 및 연결</div>
+            <p>API 서버가 실제로 필요한 S3, DynamoDB, SQS 권한만 포함하는 커스텀 정책을 만듭니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">json</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "S3ProductImages",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::shopeasy-product-images/*"
+    },
+    {
+      "Sid": "S3ListBucket",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::shopeasy-product-images"
+    },
+    {
+      "Sid": "DynamoDBSessions",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Query"
+      ],
+      "Resource": "arn:aws:dynamodb:ap-northeast-2:123456789012:table/shopeasy-sessions"
+    },
+    {
+      "Sid": "SQSOrderQueue",
+      "Effect": "Allow",
+      "Action": [
+        "sqs:SendMessage",
+        "sqs:ReceiveMessage",
+        "sqs:DeleteMessage",
+        "sqs:GetQueueAttributes"
+      ],
+      "Resource": "arn:aws:sqs:ap-northeast-2:123456789012:shopeasy-order-queue"
+    },
+    {
+      "Sid": "CloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:ap-northeast-2:123456789012:log-group:/shopeasy/*"
+    }
+  ]
+}</code></pre>
+            </div>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 정책 생성
+aws iam create-policy \
+  --policy-name ShopEasy-ApiServer-Policy \
+  --policy-document file://shopeasy-api-policy.json
+
+# 역할에 정책 연결
+aws iam attach-role-policy \
+  --role-name ShopEasy-EC2-ApiServer-Role \
+  --policy-arn "arn:aws:iam::123456789012:policy/ShopEasy-ApiServer-Policy"</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 3: 인스턴스 프로파일 생성 및 역할 추가</div>
+            <p>인스턴스 프로파일을 만들고 IAM 역할을 연결합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 인스턴스 프로파일 생성
+aws iam create-instance-profile \
+  --instance-profile-name ShopEasy-EC2-ApiServer-Profile
+
+# 인스턴스 프로파일에 역할 추가
+aws iam add-role-to-instance-profile \
+  --instance-profile-name ShopEasy-EC2-ApiServer-Profile \
+  --role-name ShopEasy-EC2-ApiServer-Role
+
+# 확인
+aws iam get-instance-profile \
+  --instance-profile-name ShopEasy-EC2-ApiServer-Profile</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 4: EC2 인스턴스에 인스턴스 프로파일 연결</div>
+            <p>실행 중인 EC2 인스턴스에 인스턴스 프로파일을 연결합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 실행 중인 인스턴스에 프로파일 연결
+aws ec2 associate-iam-instance-profile \
+  --instance-id i-0abcdef1234567890 \
+  --iam-instance-profile Name=ShopEasy-EC2-ApiServer-Profile
+
+# 연결 확인
+aws ec2 describe-iam-instance-profile-associations \
+  --filters "Name=instance-id,Values=i-0abcdef1234567890"</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 5: .env에서 AWS Access Key 제거</div>
+            <p>인스턴스 프로파일 연결 후 .env 파일에서 하드코딩된 자격증명을 제거합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># ShopEasy API 서버의 새로운 .env 파일
+# ===================================
+# AWS 자격증명 (인스턴스 프로파일 사용 - 키 불필요!)
+# AWS_ACCESS_KEY_ID=      ← 삭제!
+# AWS_SECRET_ACCESS_KEY=  ← 삭제!
+AWS_REGION=ap-northeast-2
+
+# S3 설정
+S3_BUCKET=shopeasy-product-images
+
+# DynamoDB 설정
+DYNAMODB_TABLE=shopeasy-sessions
+
+# SQS 설정
+SQS_QUEUE_URL=https://sqs.ap-northeast-2.amazonaws.com/123456789012/shopeasy-order-queue</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 6: 동작 확인 및 기존 Access Key 비활성화</div>
+            <p>애플리케이션이 정상 작동하는지 확인한 후 기존 Access Key를 비활성화합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># EC2 인스턴스에 SSH 접속 후 인스턴스 메타데이터 확인
+TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+curl -H "X-aws-ec2-metadata-token: $TOKEN" \
+  http://169.254.169.254/latest/meta-data/iam/security-credentials/ShopEasy-EC2-ApiServer-Role
+
+# API 서버 재시작
+sudo systemctl restart shopeasy-api
+
+# 정상 작동 확인 후 기존 Access Key 비활성화
+aws iam update-access-key \
+  --user-name shopeasy-api-user \
+  --access-key-id AKIAIOSFODNN7EXAMPLE \
+  --status Inactive
+
+# 일주일 후 문제없으면 키 삭제
+# aws iam delete-access-key \
+#   --user-name shopeasy-api-user \
+#   --access-key-id AKIAIOSFODNN7EXAMPLE</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">인스턴스 프로파일 전환 모범 사례</div>
+        <p>
+          <strong>1. 점진적 전환:</strong> 한 번에 모든 서버를 전환하지 말고, 테스트 서버부터 시작합니다.<br>
+          <strong>2. 키 즉시 삭제 금지:</strong> 전환 후 최소 1~2주간 기존 키를 비활성화 상태로 유지하여 롤백 가능성을 확보합니다.<br>
+          <strong>3. IMDSv2 강제:</strong> 인스턴스 메타데이터 서비스 v2(토큰 기반)를 사용하여 SSRF 공격을 방지합니다.<br>
+          <strong>4. 모니터링:</strong> CloudTrail에서 AssumeRole 이벤트를 확인하여 정상 동작 여부를 검증합니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== Section 2: Role Separation ==================== -->
+    <section class="content-section" id="role-separation">
+      <h2>S3, DynamoDB, SQS 접근용 역할 분리</h2>
+
+      <h3>역할 분리 원칙</h3>
+      <p>
+        보안의 핵심 원칙 중 하나는 <strong>관심사의 분리(Separation of Concerns)</strong>입니다.
+        IAM 역할도 마찬가지로, 하나의 역할이 너무 많은 서비스에 접근하면 해당 역할이 탈취되었을 때
+        피해 범위(blast radius)가 커집니다. 이상적으로는 <strong>한 역할 = 한 서비스 접근</strong> 원칙을 따릅니다.
+      </p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 열쇠 분리</div>
+        <p>
+          집에 현관 열쇠, 금고 열쇠, 차고 열쇠가 있다고 합시다.
+          모든 열쇠를 하나의 마스터 키로 통합하면 편리하지만, 그 키를 잃어버리면 모든 것이 위험해집니다.
+          각각의 열쇠를 분리하면, 하나를 잃어버려도 나머지는 안전합니다.
+          IAM 역할 분리도 같은 원리입니다.
+        </p>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">역할 분리 아키텍처</div>
+        <div class="diagram-row">
+          <div class="diagram-box compute">
+            <strong>ShopEasy EC2</strong><br>
+            API Server
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box iam">
+            <strong>ShopEasy-S3-Role</strong><br>
+            S3 상품 이미지<br>
+            업로드/다운로드
+          </div>
+          <div class="diagram-box iam">
+            <strong>ShopEasy-DynamoDB-Role</strong><br>
+            세션 관리<br>
+            읽기/쓰기
+          </div>
+          <div class="diagram-box iam">
+            <strong>ShopEasy-SQS-Role</strong><br>
+            주문 큐<br>
+            메시지 송수신
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box storage">
+            <strong>S3</strong><br>
+            shopeasy-product-images
+          </div>
+          <div class="diagram-box database">
+            <strong>DynamoDB</strong><br>
+            shopeasy-sessions
+          </div>
+          <div class="diagram-box queue">
+            <strong>SQS</strong><br>
+            shopeasy-order-queue
+          </div>
+        </div>
+      </div>
+
+      <h3>S3 접근 정책 예제</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowProductImageUpload",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::shopeasy-product-images/*",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": ["products/*", "thumbnails/*"]
+        }
+      }
+    },
+    {
+      "Sid": "AllowListBucket",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::shopeasy-product-images",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": ["products/*", "thumbnails/*"]
+        }
+      }
+    },
+    {
+      "Sid": "DenyPublicAccess",
+      "Effect": "Deny",
+      "Action": [
+        "s3:PutBucketPolicy",
+        "s3:PutBucketAcl",
+        "s3:PutObjectAcl"
+      ],
+      "Resource": [
+        "arn:aws:s3:::shopeasy-product-images",
+        "arn:aws:s3:::shopeasy-product-images/*"
+      ]
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>DynamoDB 접근 정책 예제</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowSessionManagement",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Query"
+      ],
+      "Resource": "arn:aws:dynamodb:ap-northeast-2:123456789012:table/shopeasy-sessions"
+    },
+    {
+      "Sid": "AllowSessionIndex",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:Query"
+      ],
+      "Resource": "arn:aws:dynamodb:ap-northeast-2:123456789012:table/shopeasy-sessions/index/*"
+    },
+    {
+      "Sid": "DenyTableManagement",
+      "Effect": "Deny",
+      "Action": [
+        "dynamodb:CreateTable",
+        "dynamodb:DeleteTable",
+        "dynamodb:UpdateTable"
+      ],
+      "Resource": "*"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>복합 역할 설계 (실무에서 적절한 조합)</h3>
+      <p>
+        이론적으로는 서비스별 역할 분리가 이상적이지만, 실무에서는 <strong>EC2 하나에 인스턴스 프로파일 하나</strong>만
+        연결할 수 있으므로, 하나의 역할에 여러 정책을 연결하는 것이 현실적입니다.
+        이때 중요한 것은 <strong>정책을 분리</strong>하는 것입니다.
+      </p>
+
+      <div class="info-box tip">
+        <div class="info-box-title">실무 권장: 역할은 하나, 정책은 분리</div>
+        <p>
+          EC2 인스턴스에는 하나의 인스턴스 프로파일만 연결 가능합니다.
+          따라서 하나의 역할에 <strong>서비스별로 분리된 정책</strong>을 각각 연결합니다:<br><br>
+          <code>ShopEasy-EC2-ApiServer-Role</code><br>
+          ├── ShopEasy-S3-Policy (S3 접근)<br>
+          ├── ShopEasy-DynamoDB-Policy (DynamoDB 접근)<br>
+          ├── ShopEasy-SQS-Policy (SQS 접근)<br>
+          └── ShopEasy-CloudWatch-Policy (로깅)<br><br>
+          이렇게 하면 특정 서비스 권한만 수정할 때 다른 정책에 영향을 주지 않습니다.
+        </p>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 각 정책을 개별적으로 역할에 연결
+aws iam attach-role-policy \
+  --role-name ShopEasy-EC2-ApiServer-Role \
+  --policy-arn "arn:aws:iam::123456789012:policy/ShopEasy-S3-Policy"
+
+aws iam attach-role-policy \
+  --role-name ShopEasy-EC2-ApiServer-Role \
+  --policy-arn "arn:aws:iam::123456789012:policy/ShopEasy-DynamoDB-Policy"
+
+aws iam attach-role-policy \
+  --role-name ShopEasy-EC2-ApiServer-Role \
+  --policy-arn "arn:aws:iam::123456789012:policy/ShopEasy-SQS-Policy"
+
+aws iam attach-role-policy \
+  --role-name ShopEasy-EC2-ApiServer-Role \
+  --policy-arn "arn:aws:iam::123456789012:policy/ShopEasy-CloudWatch-Policy"
+
+# 연결된 정책 확인
+aws iam list-attached-role-policies \
+  --role-name ShopEasy-EC2-ApiServer-Role</code></pre>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>정책 이름</th>
+            <th>대상 서비스</th>
+            <th>허용 액션</th>
+            <th>리소스 범위</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ShopEasy-S3-Policy</td>
+            <td>S3</td>
+            <td>PutObject, GetObject, DeleteObject, ListBucket</td>
+            <td>shopeasy-product-images 버킷</td>
+          </tr>
+          <tr>
+            <td>ShopEasy-DynamoDB-Policy</td>
+            <td>DynamoDB</td>
+            <td>GetItem, PutItem, UpdateItem, DeleteItem, Query</td>
+            <td>shopeasy-sessions 테이블</td>
+          </tr>
+          <tr>
+            <td>ShopEasy-SQS-Policy</td>
+            <td>SQS</td>
+            <td>SendMessage, ReceiveMessage, DeleteMessage</td>
+            <td>shopeasy-order-queue 큐</td>
+          </tr>
+          <tr>
+            <td>ShopEasy-CloudWatch-Policy</td>
+            <td>CloudWatch Logs</td>
+            <td>CreateLogGroup, CreateLogStream, PutLogEvents</td>
+            <td>/shopeasy/* 로그 그룹</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box warning">
+        <div class="info-box-title">IAM 정책 수 제한</div>
+        <p>
+          하나의 IAM 역할에 연결할 수 있는 관리형 정책은 <strong>최대 10개</strong>입니다.
+          (AWS 기본 한도, 서비스 할당량 증가 요청 가능)
+          정책이 많이 필요한 경우 여러 권한을 하나의 정책으로 합치되,
+          논리적으로 연관된 권한끼리 그룹핑하는 것이 좋습니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== Section 3: IAM Groups ==================== -->
+    <section class="content-section" id="iam-groups">
+      <h2>개발자 / 운영자 IAM 그룹 & 정책 설계</h2>
+
+      <p>
+        ShopEasy 프로젝트 팀은 개발자, 운영자, 관리자 세 가지 역할로 구성됩니다.
+        각 역할에 필요한 최소 권한을 IAM 그룹으로 설계합니다.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">ShopEasy IAM 그룹 구조</div>
+        <div class="diagram-row">
+          <div class="diagram-box user">
+            <strong>IAM 사용자들</strong><br>
+            김개발, 이운영, 박관리, 최개발...
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box iam">
+            <strong>ShopEasy-Developers</strong><br>
+            읽기 위주<br>
+            + 제한된 배포
+          </div>
+          <div class="diagram-box iam">
+            <strong>ShopEasy-Operators</strong><br>
+            인프라 관리<br>
+            + 모니터링
+          </div>
+          <div class="diagram-box iam">
+            <strong>ShopEasy-Admins</strong><br>
+            전체 권한<br>
+            (MFA 필수)
+          </div>
+        </div>
+      </div>
+
+      <h3>개발자 그룹 정책: 읽기 위주 + 제한된 배포 권한</h3>
+      <p>
+        개발자는 코드를 배포하고 로그를 확인할 수 있어야 하지만,
+        인프라를 직접 생성/삭제하거나 IAM 정책을 변경할 수 없어야 합니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadOnlyEC2",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "ec2:Get*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "LimitedCodeDeploy",
+      "Effect": "Allow",
+      "Action": [
+        "codedeploy:GetDeployment",
+        "codedeploy:GetDeploymentGroup",
+        "codedeploy:ListDeployments",
+        "codedeploy:CreateDeployment"
+      ],
+      "Resource": "arn:aws:codedeploy:ap-northeast-2:123456789012:deploymentgroup:ShopEasy-App/*"
+    },
+    {
+      "Sid": "S3ReadAndDeploy",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:ListBucket",
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::shopeasy-deployment-artifacts",
+        "arn:aws:s3:::shopeasy-deployment-artifacts/*"
+      ]
+    },
+    {
+      "Sid": "CloudWatchLogsRead",
+      "Effect": "Allow",
+      "Action": [
+        "logs:GetLogEvents",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams",
+        "logs:FilterLogEvents",
+        "logs:StartQuery",
+        "logs:GetQueryResults"
+      ],
+      "Resource": "arn:aws:logs:ap-northeast-2:123456789012:log-group:/shopeasy/*"
+    },
+    {
+      "Sid": "DynamoDBReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:DescribeTable"
+      ],
+      "Resource": "arn:aws:dynamodb:ap-northeast-2:123456789012:table/shopeasy-*"
+    },
+    {
+      "Sid": "RDSReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "rds:Describe*",
+        "rds:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyIAMAndNetworkChanges",
+      "Effect": "Deny",
+      "Action": [
+        "iam:*",
+        "ec2:*Vpc*",
+        "ec2:*Subnet*",
+        "ec2:*SecurityGroup*",
+        "ec2:*Route*",
+        "ec2:*InternetGateway*",
+        "ec2:*NatGateway*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>운영자 그룹 정책: 인프라 관리 + 모니터링</h3>
+      <p>
+        운영자는 인프라를 관리하고, 모니터링하며, 장애 상황에 대응할 수 있어야 합니다.
+        단, IAM 관리 권한은 없습니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EC2Management",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "ec2:StartInstances",
+        "ec2:StopInstances",
+        "ec2:RebootInstances",
+        "ec2:CreateSnapshot",
+        "ec2:CreateImage"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:ResourceTag/Project": "ShopEasy"
+        }
+      }
+    },
+    {
+      "Sid": "RDSManagement",
+      "Effect": "Allow",
+      "Action": [
+        "rds:Describe*",
+        "rds:RebootDBInstance",
+        "rds:CreateDBSnapshot",
+        "rds:ModifyDBInstance"
+      ],
+      "Resource": "arn:aws:rds:ap-northeast-2:123456789012:db:shopeasy-*"
+    },
+    {
+      "Sid": "ELBManagement",
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:Describe*",
+        "elasticloadbalancing:ModifyTargetGroup",
+        "elasticloadbalancing:RegisterTargets",
+        "elasticloadbalancing:DeregisterTargets"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AutoScalingManagement",
+      "Effect": "Allow",
+      "Action": [
+        "autoscaling:Describe*",
+        "autoscaling:UpdateAutoScalingGroup",
+        "autoscaling:SetDesiredCapacity"
+      ],
+      "Resource": "arn:aws:autoscaling:ap-northeast-2:123456789012:autoScalingGroup:*:autoScalingGroupName/shopeasy-*"
+    },
+    {
+      "Sid": "CloudWatchFullAccess",
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:*",
+        "logs:*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3FullAccess",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::shopeasy-*",
+        "arn:aws:s3:::shopeasy-*/*"
+      ]
+    },
+    {
+      "Sid": "DenyIAMChanges",
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateUser",
+        "iam:DeleteUser",
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:AttachUserPolicy",
+        "iam:DetachUserPolicy",
+        "iam:PutUserPolicy",
+        "iam:DeleteUserPolicy",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy"
+      ],
+      "Resource": "*"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>관리자 그룹 정책: 전체 권한 (MFA 필수)</h3>
+      <p>
+        관리자는 모든 AWS 리소스에 대한 전체 권한을 가지지만,
+        <strong>반드시 MFA 인증을 완료한 후에만</strong> 권한을 행사할 수 있습니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowFullAccessWithMFA",
+      "Effect": "Allow",
+      "Action": "*",
+      "Resource": "*",
+      "Condition": {
+        "Bool": {
+          "aws:MultiFactorAuthPresent": "true"
+        }
+      }
+    },
+    {
+      "Sid": "AllowSelfManageMFA",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateVirtualMFADevice",
+        "iam:EnableMFADevice",
+        "iam:ResyncMFADevice",
+        "iam:ListMFADevices",
+        "iam:GetUser",
+        "iam:ChangePassword"
+      ],
+      "Resource": [
+        "arn:aws:iam::123456789012:mfa/${aws:username}",
+        "arn:aws:iam::123456789012:user/${aws:username}"
+      ]
+    },
+    {
+      "Sid": "DenyWithoutMFA",
+      "Effect": "Deny",
+      "NotAction": [
+        "iam:CreateVirtualMFADevice",
+        "iam:EnableMFADevice",
+        "iam:ListMFADevices",
+        "iam:GetUser",
+        "iam:ChangePassword",
+        "sts:GetSessionToken"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "BoolIfExists": {
+          "aws:MultiFactorAuthPresent": "false"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># IAM 그룹 생성
+aws iam create-group --group-name ShopEasy-Developers
+aws iam create-group --group-name ShopEasy-Operators
+aws iam create-group --group-name ShopEasy-Admins
+
+# 정책 생성
+aws iam create-policy --policy-name ShopEasy-Developer-Policy \
+  --policy-document file://developer-policy.json
+aws iam create-policy --policy-name ShopEasy-Operator-Policy \
+  --policy-document file://operator-policy.json
+aws iam create-policy --policy-name ShopEasy-Admin-Policy \
+  --policy-document file://admin-policy.json
+
+# 그룹에 정책 연결
+aws iam attach-group-policy --group-name ShopEasy-Developers \
+  --policy-arn "arn:aws:iam::123456789012:policy/ShopEasy-Developer-Policy"
+aws iam attach-group-policy --group-name ShopEasy-Operators \
+  --policy-arn "arn:aws:iam::123456789012:policy/ShopEasy-Operator-Policy"
+aws iam attach-group-policy --group-name ShopEasy-Admins \
+  --policy-arn "arn:aws:iam::123456789012:policy/ShopEasy-Admin-Policy"
+
+# 사용자를 그룹에 추가
+aws iam add-user-to-group --group-name ShopEasy-Developers --user-name kim-developer
+aws iam add-user-to-group --group-name ShopEasy-Operators --user-name lee-operator
+aws iam add-user-to-group --group-name ShopEasy-Admins --user-name park-admin</code></pre>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>그룹</th>
+            <th>EC2</th>
+            <th>S3</th>
+            <th>RDS</th>
+            <th>IAM</th>
+            <th>CloudWatch</th>
+            <th>배포</th>
+            <th>MFA 필수</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Developers</strong></td>
+            <td>읽기만</td>
+            <td>읽기 + 배포</td>
+            <td>읽기만</td>
+            <td>불가</td>
+            <td>읽기만</td>
+            <td>가능</td>
+            <td>권장</td>
+          </tr>
+          <tr>
+            <td><strong>Operators</strong></td>
+            <td>관리</td>
+            <td>전체</td>
+            <td>관리</td>
+            <td>불가</td>
+            <td>전체</td>
+            <td>가능</td>
+            <td>필수</td>
+          </tr>
+          <tr>
+            <td><strong>Admins</strong></td>
+            <td>전체</td>
+            <td>전체</td>
+            <td>전체</td>
+            <td>전체</td>
+            <td>전체</td>
+            <td>전체</td>
+            <td>필수</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ==================== Section 4: MFA Enforcement ==================== -->
+    <section class="content-section" id="mfa-enforcement">
+      <h2>MFA 강제 정책 적용</h2>
+
+      <h3>MFA 미설정 시 권한 차단 정책</h3>
+      <p>
+        MFA(Multi-Factor Authentication)는 비밀번호 외에 추가 인증 요소를 요구하여 계정 보안을 강화합니다.
+        AWS에서는 IAM 정책의 <strong>조건(Condition)</strong>을 활용하여
+        MFA를 설정하지 않은 사용자의 모든 작업을 차단할 수 있습니다.
+      </p>
+
+      <div class="info-box concept">
+        <div class="info-box-title">MFA 강제의 원리</div>
+        <p>
+          AWS API를 호출할 때, 세션에 MFA 인증 정보가 포함되어 있으면 <code>aws:MultiFactorAuthPresent</code> 조건 키가
+          <code>true</code>로 설정됩니다. 이를 활용하여 MFA 없이 로그인한 세션에서는
+          MFA 설정과 관련된 최소 작업만 허용하고, 나머지 모든 작업을 차단합니다.
+        </p>
+      </div>
+
+      <h3>MFA 강제 정책 JSON 코드</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowViewAccountInfo",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetAccountPasswordPolicy",
+        "iam:ListVirtualMFADevices"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowManageOwnPasswords",
+      "Effect": "Allow",
+      "Action": [
+        "iam:ChangePassword",
+        "iam:GetUser"
+      ],
+      "Resource": "arn:aws:iam::123456789012:user/${aws:username}"
+    },
+    {
+      "Sid": "AllowManageOwnMFA",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateVirtualMFADevice",
+        "iam:DeleteVirtualMFADevice",
+        "iam:ListMFADevices",
+        "iam:EnableMFADevice",
+        "iam:ResyncMFADevice"
+      ],
+      "Resource": [
+        "arn:aws:iam::123456789012:mfa/*",
+        "arn:aws:iam::123456789012:user/${aws:username}"
+      ]
+    },
+    {
+      "Sid": "AllowDeactivateOwnMFA",
+      "Effect": "Allow",
+      "Action": [
+        "iam:DeactivateMFADevice"
+      ],
+      "Resource": [
+        "arn:aws:iam::123456789012:mfa/${aws:username}",
+        "arn:aws:iam::123456789012:user/${aws:username}"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:MultiFactorAuthPresent": "true"
+        }
+      }
+    },
+    {
+      "Sid": "DenyAllExceptMFAWithoutMFA",
+      "Effect": "Deny",
+      "NotAction": [
+        "iam:CreateVirtualMFADevice",
+        "iam:EnableMFADevice",
+        "iam:GetUser",
+        "iam:ChangePassword",
+        "iam:ListMFADevices",
+        "iam:ListVirtualMFADevices",
+        "iam:ResyncMFADevice",
+        "iam:GetAccountPasswordPolicy",
+        "sts:GetSessionToken"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "BoolIfExists": {
+          "aws:MultiFactorAuthPresent": "false"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">BoolIfExists vs Bool 조건의 차이</div>
+        <p>
+          <strong><code>Bool</code>:</strong> 조건 키가 반드시 존재해야 하며, 값이 지정된 것과 일치해야 합니다.
+          장기 자격증명(Access Key)으로 호출하면 <code>aws:MultiFactorAuthPresent</code> 키가 아예 없으므로 조건이 평가되지 않습니다.<br><br>
+          <strong><code>BoolIfExists</code>:</strong> 조건 키가 존재하면 값을 비교하고, 존재하지 않으면 조건이 <code>true</code>로 평가됩니다.
+          MFA 강제 정책에서는 <code>BoolIfExists</code>를 사용해야 장기 자격증명도 차단됩니다.
+        </p>
+      </div>
+
+      <h3>MFA 강제 흐름도</h3>
+      <div class="diagram">
+        <div class="diagram-title">MFA 강제 정책 동작 흐름</div>
+        <div class="diagram-row">
+          <div class="diagram-box user">
+            <strong>사용자 로그인</strong><br>
+            콘솔 접속
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box security">
+            <strong>MFA 설정 여부 확인</strong><br>
+            aws:MultiFactorAuthPresent
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box iam">
+            <strong>MFA 있음</strong><br>
+            모든 권한 사용 가능<br>
+            (정책에 따라)
+          </div>
+          <div class="diagram-box waf">
+            <strong>MFA 없음</strong><br>
+            MFA 설정 액션만 허용<br>
+            나머지 모두 Deny
+          </div>
+        </div>
+      </div>
+
+      <!-- Lab: MFA 강제 정책 -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: MFA 강제 정책 테스트</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">Step 1: MFA 강제 정책 생성</div>
+            <p>모든 IAM 그룹에 적용할 MFA 강제 정책을 생성합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># MFA 강제 정책 생성
+aws iam create-policy \
+  --policy-name ShopEasy-MFA-Enforce \
+  --policy-document file://mfa-enforce-policy.json \
+  --description "MFA 미설정 사용자의 모든 작업 차단"
+
+# 모든 그룹에 MFA 정책 연결
+aws iam attach-group-policy --group-name ShopEasy-Developers \
+  --policy-arn "arn:aws:iam::123456789012:policy/ShopEasy-MFA-Enforce"
+aws iam attach-group-policy --group-name ShopEasy-Operators \
+  --policy-arn "arn:aws:iam::123456789012:policy/ShopEasy-MFA-Enforce"
+aws iam attach-group-policy --group-name ShopEasy-Admins \
+  --policy-arn "arn:aws:iam::123456789012:policy/ShopEasy-MFA-Enforce"</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 2: 테스트 사용자로 MFA 없이 접근 시도</div>
+            <p>MFA를 설정하지 않은 테스트 사용자로 AWS 서비스에 접근을 시도합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 테스트 사용자 생성
+aws iam create-user --user-name test-mfa-user
+aws iam create-access-key --user-name test-mfa-user
+
+# 테스트 사용자를 개발자 그룹에 추가
+aws iam add-user-to-group --group-name ShopEasy-Developers --user-name test-mfa-user
+
+# MFA 없이 S3 접근 시도 (실패 예상)
+aws s3 ls --profile test-mfa-user
+# 예상: An error occurred (AccessDenied)
+
+# MFA 없이 EC2 조회 시도 (실패 예상)
+aws ec2 describe-instances --profile test-mfa-user
+# 예상: An error occurred (UnauthorizedOperation)</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 3: 가상 MFA 디바이스 등록</div>
+            <p>테스트 사용자에게 가상 MFA 디바이스를 등록합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 가상 MFA 디바이스 생성 (콘솔에서도 가능)
+aws iam create-virtual-mfa-device \
+  --virtual-mfa-device-name test-mfa-user \
+  --outfile QRCode.png \
+  --bootstrap-method QRCodePNG \
+  --profile test-mfa-user
+
+# Google Authenticator 등 앱으로 QR코드 스캔 후
+# 연속 두 개의 OTP 코드를 입력하여 MFA 활성화
+aws iam enable-mfa-device \
+  --user-name test-mfa-user \
+  --serial-number "arn:aws:iam::123456789012:mfa/test-mfa-user" \
+  --authentication-code1 123456 \
+  --authentication-code2 789012 \
+  --profile test-mfa-user</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 4: MFA 인증 후 접근 테스트</div>
+            <p>MFA 인증을 통해 임시 세션을 받고 접근을 테스트합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># MFA 인증으로 임시 세션 토큰 발급
+aws sts get-session-token \
+  --serial-number "arn:aws:iam::123456789012:mfa/test-mfa-user" \
+  --token-code 123456 \
+  --duration-seconds 3600 \
+  --profile test-mfa-user
+
+# 반환된 임시 자격증명을 환경변수로 설정
+export AWS_ACCESS_KEY_ID=임시_Access_Key
+export AWS_SECRET_ACCESS_KEY=임시_Secret_Key
+export AWS_SESSION_TOKEN=임시_Session_Token
+
+# MFA 인증된 세션으로 S3 접근 (성공 예상)
+aws s3 ls
+
+# MFA 인증된 세션으로 EC2 조회 (성공 예상)
+aws ec2 describe-instances</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 5: 테스트 정리</div>
+            <p>테스트에 사용한 리소스를 정리합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># MFA 디바이스 비활성화 및 삭제
+aws iam deactivate-mfa-device \
+  --user-name test-mfa-user \
+  --serial-number "arn:aws:iam::123456789012:mfa/test-mfa-user"
+aws iam delete-virtual-mfa-device \
+  --serial-number "arn:aws:iam::123456789012:mfa/test-mfa-user"
+
+# 그룹에서 사용자 제거
+aws iam remove-user-from-group --group-name ShopEasy-Developers --user-name test-mfa-user
+
+# Access Key 삭제
+aws iam delete-access-key --user-name test-mfa-user --access-key-id AKIAEXAMPLE
+
+# 사용자 삭제
+aws iam delete-user --user-name test-mfa-user</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">MFA 강제 정책 적용 시 주의사항</div>
+        <p>
+          <strong>1. 서비스 계정 제외:</strong> EC2 인스턴스 프로파일, Lambda 실행 역할 등 자동화 서비스 계정에는 MFA 강제를 적용하지 않습니다. 이들은 IAM 역할의 임시 자격증명을 사용하므로 MFA가 불필요합니다.<br>
+          <strong>2. 콘솔 vs CLI:</strong> 콘솔에서는 로그인 시 MFA를 입력하면 세션에 자동 반영되지만, CLI에서는 <code>sts:GetSessionToken</code>을 별도로 호출해야 합니다.<br>
+          <strong>3. 잠금 방지:</strong> MFA 강제 정책을 적용하기 전에, 관리자 계정에 먼저 MFA를 설정하세요. 그렇지 않으면 관리자도 잠겨버립니다.<br>
+          <strong>4. 루트 계정:</strong> 루트 계정에는 IAM 정책이 적용되지 않으므로, AWS 계정 설정에서 별도로 MFA를 활성화해야 합니다.
+        </p>
+      </div>
+    </section>
+
+    <div class="chapter-nav">
+      <a href="05-permission-boundary.html" class="prev">이전: 권한 경계 & 최소 권한 설계</a>
+      <a href="07-vpc-security.html" class="next">다음: VPC 보안 심화</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/06-ecommerce-iam-lab.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>

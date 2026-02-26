@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/17-cloudtrail.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CloudTrail - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li class="sidebar-section">CloudTrail</li>
+      <li><a href="#cloudtrail-concept">CloudTrail 개념</a></li>
+      <li><a href="#trail-creation">트레일 생성 &amp; S3 저장</a></li>
+      <li><a href="#log-integrity">로그 파일 무결성 검증</a></li>
+      <li><a href="#cloudtrail-lake">CloudTrail Lake</a></li>
+      <li><a href="#security-events">주요 보안 이벤트 필터링</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 17</span>
+      <h1>CloudTrail</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>CloudTrail의 역할과 AWS API 호출 기록의 중요성을 이해한다</li>
+          <li>관리 이벤트와 데이터 이벤트의 차이를 설명할 수 있다</li>
+          <li>트레일을 생성하고 S3 버킷에 로그를 저장할 수 있다</li>
+          <li>로그 파일 무결성 검증의 필요성과 방법을 이해한다</li>
+          <li>CloudTrail Lake를 활용하여 SQL 기반으로 이벤트를 조회할 수 있다</li>
+          <li>주요 보안 이벤트를 필터링하고 CloudWatch 알림을 설정할 수 있다</li>
+          <li>ShopEasy 이커머스 환경에서 보안 감사 체계를 구축할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- Section 1: CloudTrail 개념 -->
+    <!-- ============================================================ -->
+    <section class="content-section" id="cloudtrail-concept">
+      <h2>CloudTrail 개념</h2>
+
+      <h3>CloudTrail이란?</h3>
+      <p>AWS CloudTrail은 AWS 계정에서 이루어지는 <strong>모든 API 호출을 기록</strong>하는 서비스입니다. AWS Management Console, AWS CLI, SDK, 그리고 다른 AWS 서비스가 수행하는 모든 작업이 CloudTrail에 이벤트로 기록됩니다.</p>
+
+      <p>예를 들어, ShopEasy 이커머스 앱을 운영하면서 누군가 EC2 인스턴스를 종료하거나, S3 버킷의 퍼블릭 설정을 변경하거나, IAM 사용자를 생성한 경우, 이 모든 활동이 CloudTrail에 기록됩니다. <strong>"누가, 언제, 어디서, 무엇을"</strong> 했는지를 추적할 수 있습니다.</p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: AWS 계정의 CCTV 녹화</div>
+        <p>ShopEasy 오프라인 매장에 CCTV를 설치하면, 매장에 들어오는 모든 사람의 행동이 녹화됩니다. 누가 언제 들어왔고, 어떤 상품을 만졌고, 무엇을 구매했는지 모두 기록되죠.</p>
+        <p><strong>CloudTrail은 AWS 계정의 CCTV</strong>입니다. AWS 계정에서 일어나는 모든 API 호출(행동)이 기록됩니다. 보안 사고가 발생했을 때 이 "녹화 영상"을 되감아 보면서 누가 무엇을 했는지 추적할 수 있습니다.</p>
+        <ul>
+          <li><strong>CCTV 카메라</strong> = CloudTrail 서비스</li>
+          <li><strong>녹화 영상</strong> = CloudTrail 로그 파일</li>
+          <li><strong>녹화 보관 기간</strong> = 90일 기본 보존 (트레일 생성 시 무제한 보관 가능)</li>
+          <li><strong>영상 분석</strong> = CloudTrail Lake (SQL 쿼리로 분석)</li>
+        </ul>
+      </div>
+
+      <h3>CloudTrail의 핵심 특징</h3>
+      <ul>
+        <li><strong>기본 활성화:</strong> AWS 계정 생성 시 자동으로 활성화됩니다</li>
+        <li><strong>90일 기본 보존:</strong> 이벤트 히스토리에서 최근 90일간의 관리 이벤트를 무료로 조회할 수 있습니다</li>
+        <li><strong>글로벌 서비스:</strong> IAM, STS, CloudFront 등 글로벌 서비스의 이벤트도 기록합니다</li>
+        <li><strong>무결성 검증:</strong> 로그 파일이 변조되지 않았음을 증명할 수 있습니다</li>
+        <li><strong>통합:</strong> CloudWatch Logs, S3, EventBridge 등과 연동할 수 있습니다</li>
+      </ul>
+
+      <h3>관리 이벤트 vs 데이터 이벤트</h3>
+      <p>CloudTrail이 기록하는 이벤트는 크게 세 가지 유형으로 나뉩니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>이벤트 유형</th>
+            <th>설명</th>
+            <th>예시</th>
+            <th>기본 기록</th>
+            <th>비용</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>관리 이벤트<br>(Management Events)</strong></td>
+            <td>AWS 리소스의 생성, 수정, 삭제 등 제어 플레인 작업</td>
+            <td>EC2 인스턴스 시작/중지, IAM 사용자 생성, VPC 생성, 보안그룹 규칙 변경</td>
+            <td>기본 활성화 (90일 무료 보존)</td>
+            <td>첫 번째 트레일 무료, 추가 트레일은 이벤트당 과금</td>
+          </tr>
+          <tr>
+            <td><strong>데이터 이벤트<br>(Data Events)</strong></td>
+            <td>리소스 내부의 데이터 작업 (데이터 플레인 작업)</td>
+            <td>S3 객체 업로드/다운로드 (GetObject, PutObject), Lambda 함수 호출 (Invoke)</td>
+            <td>기본 비활성화 (별도 설정 필요)</td>
+            <td>이벤트 수에 따라 과금 (대량 발생 가능하므로 주의)</td>
+          </tr>
+          <tr>
+            <td><strong>인사이트 이벤트<br>(Insights Events)</strong></td>
+            <td>비정상적인 API 호출 패턴 자동 탐지</td>
+            <td>갑자기 대량의 S3 버킷 삭제, 비정상적 IAM 활동 급증</td>
+            <td>기본 비활성화 (별도 설정 필요)</td>
+            <td>분석된 관리 이벤트 수에 따라 과금</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">관리 이벤트와 데이터 이벤트의 차이</div>
+        <p><strong>관리 이벤트</strong>는 "무엇을 만들었는지"에 대한 기록이고, <strong>데이터 이벤트</strong>는 "데이터로 무엇을 했는지"에 대한 기록입니다.</p>
+        <p>예를 들어, ShopEasy에서:</p>
+        <ul>
+          <li>S3 버킷을 생성하는 것 → <strong>관리 이벤트</strong> (CreateBucket)</li>
+          <li>S3 버킷에 상품 이미지를 업로드하는 것 → <strong>데이터 이벤트</strong> (PutObject)</li>
+          <li>Lambda 함수를 생성하는 것 → <strong>관리 이벤트</strong> (CreateFunction)</li>
+          <li>Lambda 함수가 실행되는 것 → <strong>데이터 이벤트</strong> (Invoke)</li>
+        </ul>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">데이터 이벤트 비용 주의</div>
+        <p>ShopEasy에서 고객이 상품 이미지를 조회할 때마다 S3 GetObject 데이터 이벤트가 발생합니다. 하루에 수만 건의 이미지 조회가 일어난다면, 데이터 이벤트 로깅 비용이 상당할 수 있습니다. <strong>반드시 필요한 버킷이나 함수에만 선택적으로 활성화</strong>하세요.</p>
+      </div>
+
+      <h3>90일 기본 보존 vs 트레일</h3>
+      <p>CloudTrail은 기본적으로 90일간의 이벤트 히스토리를 제공하지만, 보안 감사와 규정 준수를 위해서는 이것만으로 충분하지 않습니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>구분</th>
+            <th>이벤트 히스토리 (기본)</th>
+            <th>트레일 (Trail)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>보존 기간</strong></td>
+            <td>최근 90일</td>
+            <td>S3에 무제한 보관</td>
+          </tr>
+          <tr>
+            <td><strong>이벤트 유형</strong></td>
+            <td>관리 이벤트만</td>
+            <td>관리 + 데이터 + 인사이트 이벤트</td>
+          </tr>
+          <tr>
+            <td><strong>검색 방식</strong></td>
+            <td>콘솔에서 간단한 필터링</td>
+            <td>CloudTrail Lake SQL 쿼리, Athena 분석</td>
+          </tr>
+          <tr>
+            <td><strong>리전 범위</strong></td>
+            <td>현재 리전만</td>
+            <td>단일 리전 또는 모든 리전</td>
+          </tr>
+          <tr>
+            <td><strong>무결성 검증</strong></td>
+            <td>불가</td>
+            <td>다이제스트 파일로 검증 가능</td>
+          </tr>
+          <tr>
+            <td><strong>CloudWatch 연동</strong></td>
+            <td>불가</td>
+            <td>CloudWatch Logs로 실시간 전송 가능</td>
+          </tr>
+          <tr>
+            <td><strong>비용</strong></td>
+            <td>무료</td>
+            <td>S3 저장 비용 + 추가 트레일 이벤트 과금</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">ShopEasy 운영 권장사항</div>
+        <p>ShopEasy와 같은 이커머스 환경에서는 <strong>반드시 트레일을 생성</strong>해야 합니다. 결제 관련 보안 사고 발생 시, 90일 이전의 활동 기록이 필요할 수 있기 때문입니다. 또한, PCI DSS 등 규정 준수를 위해서도 장기 보관이 필수입니다.</p>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">CloudTrail 이벤트 흐름</div>
+        <div class="diagram-row">
+          <div class="diagram-box user">
+            <div class="box-title">관리자 / 개발자</div>
+            <div class="box-sub">Console, CLI, SDK</div>
+          </div>
+          <div class="diagram-arrow">&#x2192;</div>
+          <div class="diagram-box compute">
+            <div class="box-title">AWS API 호출</div>
+            <div class="box-sub">EC2, S3, IAM, RDS 등</div>
+          </div>
+          <div class="diagram-arrow">&#x2192;</div>
+          <div class="diagram-box detective">
+            <div class="box-title">CloudTrail</div>
+            <div class="box-sub">이벤트 기록</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-arrow down">&#x2193;</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box storage">
+            <div class="box-title">S3 버킷</div>
+            <div class="box-sub">장기 보관 (JSON)</div>
+          </div>
+          <div class="diagram-arrow">&#x2190;</div>
+          <div class="diagram-box detective">
+            <div class="box-title">트레일 (Trail)</div>
+            <div class="box-sub">로그 전달 설정</div>
+          </div>
+          <div class="diagram-arrow">&#x2192;</div>
+          <div class="diagram-box monitor">
+            <div class="box-title">CloudWatch Logs</div>
+            <div class="box-sub">실시간 모니터링</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 2: 트레일 생성 & S3 저장 -->
+    <!-- ============================================================ -->
+    <section class="content-section" id="trail-creation">
+      <h2>트레일 생성 &amp; S3 저장</h2>
+
+      <h3>트레일 생성 옵션</h3>
+      <p>트레일을 생성할 때 가장 중요한 결정 중 하나는 <strong>리전 범위</strong>를 설정하는 것입니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>옵션</th>
+            <th>단일 리전 트레일</th>
+            <th>모든 리전 트레일 (권장)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>범위</strong></td>
+            <td>선택한 리전의 이벤트만 기록</td>
+            <td>모든 리전의 이벤트를 기록</td>
+          </tr>
+          <tr>
+            <td><strong>장점</strong></td>
+            <td>비용 절약 (특정 리전만 사용 시)</td>
+            <td>완전한 감사 추적, 새 리전 자동 포함</td>
+          </tr>
+          <tr>
+            <td><strong>단점</strong></td>
+            <td>다른 리전의 비인가 활동을 놓칠 수 있음</td>
+            <td>이벤트 양이 많아질 수 있음</td>
+          </tr>
+          <tr>
+            <td><strong>보안 권장</strong></td>
+            <td>테스트 환경에서만 사용</td>
+            <td>프로덕션 환경에서 필수</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box danger">
+        <div class="info-box-title">왜 모든 리전 트레일이 필수인가?</div>
+        <p>공격자가 ShopEasy의 IAM 자격 증명을 탈취한 경우, 평소 사용하지 않는 리전(예: 아프리카 케이프타운)에서 EC2 인스턴스를 생성하여 암호화폐를 채굴할 수 있습니다. 단일 리전 트레일만 설정되어 있다면 이 활동을 감지할 수 없습니다.</p>
+      </div>
+
+      <h3>트레일 주요 설정 옵션</h3>
+      <ul>
+        <li><strong>트레일 이름:</strong> 식별 가능한 이름 (예: <code>shopeasy-security-trail</code>)</li>
+        <li><strong>스토리지 위치:</strong> 새 S3 버킷 생성 또는 기존 버킷 선택</li>
+        <li><strong>로그 파일 SSE-KMS 암호화:</strong> KMS 키로 로그 파일 암호화 (권장)</li>
+        <li><strong>로그 파일 무결성 검증:</strong> 다이제스트 파일 생성 (권장)</li>
+        <li><strong>SNS 알림:</strong> 새 로그 파일 전달 시 알림</li>
+        <li><strong>CloudWatch Logs:</strong> 실시간 로그 전송 (보안 이벤트 알림에 필수)</li>
+        <li><strong>태그:</strong> 비용 추적 및 리소스 관리용</li>
+      </ul>
+
+      <h3>S3 버킷에 로그 저장</h3>
+      <p>CloudTrail 로그는 S3 버킷에 JSON 형식으로 저장됩니다. 로그 파일의 경로 구조는 다음과 같습니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">text</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>s3://shopeasy-cloudtrail-logs/
+  AWSLogs/
+    123456789012/              ← AWS 계정 ID
+      CloudTrail/
+        ap-northeast-2/        ← 리전
+          2024/
+            01/
+              15/
+                123456789012_CloudTrail_ap-northeast-2_20240115T0000Z_xxxx.json.gz</code></pre>
+      </div>
+
+      <h3>CloudWatch Logs로 전송</h3>
+      <p>트레일에서 CloudWatch Logs로 이벤트를 전송하면, <strong>실시간으로 보안 이벤트를 모니터링</strong>하고 알림을 설정할 수 있습니다. 이 기능은 뒤에서 다룰 보안 이벤트 필터링에 필수적입니다.</p>
+
+      <div class="info-box tip">
+        <div class="info-box-title">CloudWatch Logs 전송 시 필요한 IAM 역할</div>
+        <p>CloudTrail이 CloudWatch Logs에 이벤트를 전송하려면 적절한 IAM 역할이 필요합니다. AWS 콘솔에서 트레일 설정 시 자동으로 역할을 생성할 수 있지만, 기존 역할을 사용할 수도 있습니다. 역할에는 <code>logs:CreateLogStream</code>과 <code>logs:PutLogEvents</code> 권한이 필요합니다.</p>
+      </div>
+
+      <h3>로그 파일 형식 (JSON)</h3>
+      <p>CloudTrail 로그 파일은 JSON 형식이며, 각 이벤트에는 다음과 같은 핵심 필드가 포함됩니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Records": [
+    {
+      "eventVersion": "1.08",
+      "userIdentity": {
+        "type": "IAMUser",
+        "principalId": "AIDAEXAMPLE",
+        "arn": "arn:aws:iam::123456789012:user/shopeasy-admin",
+        "accountId": "123456789012",
+        "userName": "shopeasy-admin"
+      },
+      "eventTime": "2024-01-15T09:30:00Z",
+      "eventSource": "ec2.amazonaws.com",
+      "eventName": "StopInstances",
+      "awsRegion": "ap-northeast-2",
+      "sourceIPAddress": "203.0.113.50",
+      "userAgent": "console.ec2.amazonaws.com",
+      "requestParameters": {
+        "instancesSet": {
+          "items": [{ "instanceId": "i-0abc123def456" }]
+        }
+      },
+      "responseElements": {
+        "instancesSet": {
+          "items": [{
+            "instanceId": "i-0abc123def456",
+            "currentState": { "code": 64, "name": "stopping" }
+          }]
+        }
+      },
+      "eventID": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "eventType": "AwsApiCall",
+      "recipientAccountId": "123456789012"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="info-box concept">
+        <div class="info-box-title">CloudTrail 로그의 핵심 필드</div>
+        <ul>
+          <li><strong>userIdentity:</strong> 누가 했는가? (사용자, 역할, 서비스)</li>
+          <li><strong>eventTime:</strong> 언제 했는가? (UTC 시간)</li>
+          <li><strong>eventSource:</strong> 어떤 서비스에서? (ec2, s3, iam 등)</li>
+          <li><strong>eventName:</strong> 무엇을 했는가? (StopInstances, CreateUser 등)</li>
+          <li><strong>sourceIPAddress:</strong> 어디에서? (요청 IP 주소)</li>
+          <li><strong>requestParameters:</strong> 어떤 파라미터로? (요청 상세 정보)</li>
+          <li><strong>responseElements:</strong> 결과는? (응답 상세 정보)</li>
+        </ul>
+      </div>
+
+      <h3>S3 버킷 정책 설정</h3>
+      <p>CloudTrail이 S3 버킷에 로그를 저장하려면, 버킷 정책에 CloudTrail 서비스의 쓰기 권한을 허용해야 합니다. 콘솔에서 트레일을 생성하면 자동으로 설정되지만, 수동으로 설정하는 경우 다음 정책이 필요합니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AWSCloudTrailAclCheck",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "cloudtrail.amazonaws.com"
+      },
+      "Action": "s3:GetBucketAcl",
+      "Resource": "arn:aws:s3:::shopeasy-cloudtrail-logs"
+    },
+    {
+      "Sid": "AWSCloudTrailWrite",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "cloudtrail.amazonaws.com"
+      },
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::shopeasy-cloudtrail-logs/AWSLogs/123456789012/*",
+      "Condition": {
+        "StringEquals": {
+          "s3:x-amz-acl": "bucket-owner-full-control",
+          "aws:SourceArn": "arn:aws:cloudtrail:ap-northeast-2:123456789012:trail/shopeasy-security-trail"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <!-- Lab: 트레일 생성 실습 -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: ShopEasy CloudTrail 트레일 생성</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">CloudTrail 콘솔 이동</div>
+            <p>AWS Management Console에서 <strong>CloudTrail</strong> 서비스로 이동합니다.</p>
+            <p>좌측 메뉴에서 <strong>이벤트 기록 (Event history)</strong>을 클릭하여 현재 기록되고 있는 이벤트들을 확인합니다. 기본 90일간의 관리 이벤트가 보일 것입니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">트레일 생성 시작</div>
+            <p>좌측 메뉴에서 <strong>트레일 (Trails)</strong>을 클릭하고 <strong>트레일 생성 (Create trail)</strong> 버튼을 클릭합니다.</p>
+            <p>다음과 같이 설정합니다:</p>
+            <ul>
+              <li><strong>트레일 이름:</strong> <code>shopeasy-security-trail</code></li>
+              <li><strong>스토리지 위치:</strong> 새 S3 버킷 생성</li>
+              <li><strong>트레일 로그 버킷 및 폴더:</strong> <code>shopeasy-cloudtrail-logs-{계정ID}</code></li>
+              <li><strong>로그 파일 SSE-KMS 암호화:</strong> 활성화 (권장)</li>
+              <li><strong>로그 파일 검증:</strong> 활성화</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">CloudWatch Logs 설정</div>
+            <p><strong>CloudWatch Logs</strong> 섹션에서:</p>
+            <ul>
+              <li><strong>활성화:</strong> 체크</li>
+              <li><strong>로그 그룹:</strong> <code>shopeasy-cloudtrail-logs</code></li>
+              <li><strong>IAM 역할:</strong> 새 역할 생성 또는 기존 역할 선택</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">이벤트 유형 선택</div>
+            <p><strong>이벤트 유형</strong> 섹션에서:</p>
+            <ul>
+              <li><strong>관리 이벤트:</strong> 활성화 (읽기 + 쓰기 모두)</li>
+              <li><strong>데이터 이벤트:</strong> 필요 시 S3 또는 Lambda 선택</li>
+              <li><strong>인사이트 이벤트:</strong> 활성화 (비정상 API 패턴 탐지)</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">모든 리전 적용 확인</div>
+            <p><strong>"모든 리전에 적용 (Apply trail to all regions)"</strong> 옵션이 활성화되어 있는지 확인합니다. 이 옵션을 통해 현재 사용하지 않는 리전에서의 비인가 활동도 감지할 수 있습니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">트레일 생성 완료 및 확인</div>
+            <p><strong>트레일 생성 (Create trail)</strong>을 클릭하여 완료합니다.</p>
+            <p>트레일 목록에서 생성된 트레일을 확인하고, S3 버킷으로 이동하여 로그 파일이 저장되기 시작하는지 확인합니다 (몇 분 소요).</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">트레일 S3 버킷 보안 모범 사례</div>
+        <ul>
+          <li>S3 버킷의 <strong>퍼블릭 액세스를 완전히 차단</strong>합니다</li>
+          <li><strong>버킷 버전 관리</strong>를 활성화하여 로그 파일 삭제/덮어쓰기 방지합니다</li>
+          <li><strong>MFA Delete</strong>를 활성화하여 루트 계정의 MFA 없이는 로그를 삭제할 수 없게 합니다</li>
+          <li><strong>S3 Object Lock</strong>을 설정하여 일정 기간 동안 로그 파일을 변경 불가능하게 만듭니다</li>
+          <li>로그 버킷에 대한 <strong>액세스 권한을 최소화</strong>합니다 (보안 팀만 읽기 권한)</li>
+          <li><strong>수명 주기 정책</strong>을 설정하여 오래된 로그를 S3 Glacier로 이동합니다</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 3: 로그 파일 무결성 검증 -->
+    <!-- ============================================================ -->
+    <section class="content-section" id="log-integrity">
+      <h2>로그 파일 무결성 검증</h2>
+
+      <h3>무결성 검증이란?</h3>
+      <p>CloudTrail 로그 파일 무결성 검증은 CloudTrail이 S3 버킷에 전달한 로그 파일이 <strong>변경, 삭제, 위조되지 않았음을 증명</strong>하는 기능입니다. 트레일 생성 시 "로그 파일 검증 활성화" 옵션을 켜면 자동으로 동작합니다.</p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 봉인된 증거 봉투</div>
+        <p>범죄 수사에서 증거물은 봉인된 봉투에 넣어 보관합니다. 봉투가 열렸는지 여부를 봉인 상태로 확인할 수 있죠. CloudTrail의 무결성 검증도 마찬가지입니다. 로그 파일에 <strong>디지털 "봉인"</strong>을 적용하여, 나중에 누군가 로그를 변조했는지 확인할 수 있습니다.</p>
+      </div>
+
+      <h3>다이제스트 파일 개념</h3>
+      <p>무결성 검증이 활성화되면, CloudTrail은 매 시간 <strong>다이제스트 파일(Digest File)</strong>을 생성합니다. 다이제스트 파일에는 해당 시간 동안 전달된 모든 로그 파일의 해시 값이 포함됩니다.</p>
+
+      <div class="diagram">
+        <div class="diagram-title">다이제스트 파일 체인 구조</div>
+        <div class="diagram-row">
+          <div class="diagram-box storage">
+            <div class="box-title">로그 파일 1</div>
+            <div class="box-sub">09:00-10:00</div>
+          </div>
+          <div class="diagram-arrow">&#x2192;</div>
+          <div class="diagram-box encryption">
+            <div class="box-title">다이제스트 1</div>
+            <div class="box-sub">SHA-256 해시</div>
+          </div>
+          <div class="diagram-arrow">&#x2192;</div>
+          <div class="diagram-box storage">
+            <div class="box-title">로그 파일 2</div>
+            <div class="box-sub">10:00-11:00</div>
+          </div>
+          <div class="diagram-arrow">&#x2192;</div>
+          <div class="diagram-box encryption">
+            <div class="box-title">다이제스트 2</div>
+            <div class="box-sub">이전 다이제스트 참조</div>
+          </div>
+        </div>
+      </div>
+
+      <p>다이제스트 파일은 <strong>체인 구조</strong>로 연결되어 있어서, 하나의 파일이라도 변조되면 전체 체인이 깨집니다. 이는 블록체인의 원리와 유사합니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">text</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 다이제스트 파일 저장 경로
+s3://shopeasy-cloudtrail-logs/
+  AWSLogs/
+    123456789012/
+      CloudTrail-Digest/
+        ap-northeast-2/
+          2024/01/15/
+            123456789012_CloudTrail-Digest_ap-northeast-2_..._DigestEndTime_....json.gz</code></pre>
+      </div>
+
+      <h3>AWS CLI로 무결성 검증</h3>
+      <p>AWS CLI의 <code>cloudtrail validate-logs</code> 명령을 사용하여 로그 파일의 무결성을 검증할 수 있습니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 특정 기간의 로그 파일 무결성 검증
+aws cloudtrail validate-logs \
+  --trail-arn arn:aws:cloudtrail:ap-northeast-2:123456789012:trail/shopeasy-security-trail \
+  --start-time "2024-01-01T00:00:00Z" \
+  --end-time "2024-01-15T23:59:59Z" \
+  --verbose
+
+# 출력 예시 (정상)
+Validating log files for trail arn:aws:cloudtrail:ap-northeast-2:123456789012:trail/shopeasy-security-trail
+between 2024-01-01T00:00:00Z and 2024-01-15T23:59:59Z
+
+Results requested for 2024-01-01T00:00:00Z to 2024-01-15T23:59:59Z
+Results found for 2024-01-01T00:00:00Z to 2024-01-15T23:59:59Z:
+
+360/360 digest files valid
+1,247/1,247 log files valid</code></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 변조된 로그 파일이 있는 경우의 출력
+Results requested for 2024-01-01T00:00:00Z to 2024-01-15T23:59:59Z
+
+358/360 digest files valid, 2/360 digest files INVALID
+1,245/1,247 log files valid, 2/1,247 log files INVALID
+
+Log file  s3://shopeasy-cloudtrail-logs/AWSLogs/.../20240110T...json.gz  INVALID: hash value doesn't match</code></pre>
+      </div>
+
+      <h3>왜 무결성 검증이 필요한가?</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>필요 상황</th>
+            <th>설명</th>
+            <th>ShopEasy 시나리오</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>법적 증거</strong></td>
+            <td>보안 사고 발생 시 법적 절차에서 로그가 증거로 사용됨</td>
+            <td>고객 개인정보 유출 사고 시, 법적 대응에 CloudTrail 로그를 증거로 제출해야 함</td>
+          </tr>
+          <tr>
+            <td><strong>감사 대응</strong></td>
+            <td>규정 준수 감사에서 로그의 진본성 증명 필요</td>
+            <td>PCI DSS 감사에서 결제 관련 API 호출 로그의 무결성 증명 요구</td>
+          </tr>
+          <tr>
+            <td><strong>내부 조사</strong></td>
+            <td>내부자 위협 조사 시 로그가 변조되지 않았음을 확인</td>
+            <td>퇴사한 직원이 고객 데이터를 유출한 혐의 조사 시 로그 무결성 확인</td>
+          </tr>
+          <tr>
+            <td><strong>공격자 추적</strong></td>
+            <td>공격자가 흔적을 지우기 위해 로그를 삭제/변조할 수 있음</td>
+            <td>공격자가 S3 버킷에 접근하여 자신의 활동 로그를 삭제하려 시도한 경우</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box danger">
+        <div class="info-box-title">로그 변조 시나리오</div>
+        <p>공격자가 ShopEasy AWS 계정의 관리자 권한을 탈취한 경우, 자신의 활동 흔적을 지우기 위해 CloudTrail 로그 파일을 삭제하거나 변조할 수 있습니다. 무결성 검증이 활성화되어 있다면, 변조된 파일을 즉시 탐지할 수 있습니다. 이것이 바로 <strong>S3 버킷의 MFA Delete와 Object Lock을 함께 사용</strong>해야 하는 이유입니다.</p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 4: CloudTrail Lake -->
+    <!-- ============================================================ -->
+    <section class="content-section" id="cloudtrail-lake">
+      <h2>CloudTrail Lake</h2>
+
+      <h3>CloudTrail Lake란?</h3>
+      <p>CloudTrail Lake는 CloudTrail 이벤트를 <strong>SQL 쿼리로 검색하고 분석</strong>할 수 있는 관리형 데이터 레이크입니다. 기존에는 S3에 저장된 로그를 분석하려면 Amazon Athena를 별도로 설정해야 했지만, CloudTrail Lake를 사용하면 추가 설정 없이 바로 SQL 쿼리를 실행할 수 있습니다.</p>
+
+      <div class="info-box concept">
+        <div class="info-box-title">CloudTrail Lake vs 기존 방식 비교</div>
+        <table>
+          <thead>
+            <tr>
+              <th>항목</th>
+              <th>기존 방식 (S3 + Athena)</th>
+              <th>CloudTrail Lake</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>설정 난이도</strong></td>
+              <td>S3 버킷 + Glue 테이블 + Athena 설정 필요</td>
+              <td>이벤트 데이터 스토어 생성만으로 바로 사용</td>
+            </tr>
+            <tr>
+              <td><strong>쿼리 언어</strong></td>
+              <td>표준 SQL (Athena)</td>
+              <td>CloudTrail Lake 전용 SQL</td>
+            </tr>
+            <tr>
+              <td><strong>보존 기간</strong></td>
+              <td>S3 수명 주기 정책에 따라 무제한</td>
+              <td>최대 7년 (2,555일)</td>
+            </tr>
+            <tr>
+              <td><strong>비용 모델</strong></td>
+              <td>S3 저장 비용 + Athena 스캔 비용</td>
+              <td>수집된 데이터량 기반 과금</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>이벤트 데이터 스토어 생성</h3>
+      <p>CloudTrail Lake를 사용하려면 먼저 <strong>이벤트 데이터 스토어(Event Data Store)</strong>를 생성해야 합니다.</p>
+      <ul>
+        <li><strong>이름:</strong> <code>shopeasy-event-store</code></li>
+        <li><strong>보존 기간:</strong> 365일 (1년) ~ 2,555일 (7년)</li>
+        <li><strong>이벤트 유형:</strong> 관리 이벤트, 데이터 이벤트 선택</li>
+        <li><strong>조직 범위:</strong> AWS Organizations 사용 시 조직 전체 이벤트 수집 가능</li>
+        <li><strong>암호화:</strong> AWS 관리형 키 또는 고객 관리형 KMS 키</li>
+      </ul>
+
+      <h3>SQL 쿼리 예제</h3>
+      <p>CloudTrail Lake에서 ShopEasy 보안 분석에 유용한 SQL 쿼리 예제들입니다.</p>
+
+      <h4>특정 사용자의 최근 활동 추적</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">sql</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>-- shopeasy-admin 사용자의 최근 24시간 활동 조회
+SELECT
+    eventTime,
+    eventName,
+    eventSource,
+    sourceIPAddress,
+    userAgent,
+    errorCode
+FROM
+    event_data_store_id
+WHERE
+    userIdentity.userName = 'shopeasy-admin'
+    AND eventTime > '2024-01-14 00:00:00'
+ORDER BY eventTime DESC
+LIMIT 50;</code></pre>
+      </div>
+
+      <h4>비정상 IP에서의 콘솔 로그인 추적</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">sql</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>-- 콘솔 로그인 이벤트에서 비정상 IP 확인
+SELECT
+    eventTime,
+    userIdentity.userName,
+    sourceIPAddress,
+    userAgent,
+    responseElements
+FROM
+    event_data_store_id
+WHERE
+    eventName = 'ConsoleLogin'
+    AND eventTime > '2024-01-01 00:00:00'
+ORDER BY eventTime DESC;</code></pre>
+      </div>
+
+      <h4>보안그룹 변경 이력 추적</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">sql</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>-- 보안그룹 인바운드 규칙 변경 추적
+SELECT
+    eventTime,
+    userIdentity.userName,
+    eventName,
+    requestParameters,
+    sourceIPAddress
+FROM
+    event_data_store_id
+WHERE
+    eventName IN ('AuthorizeSecurityGroupIngress', 'RevokeSecurityGroupIngress')
+    AND eventTime > '2024-01-01 00:00:00'
+ORDER BY eventTime DESC;</code></pre>
+      </div>
+
+      <h4>IAM 정책 변경 추적</h4>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">sql</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>-- IAM 관련 변경 사항 추적
+SELECT
+    eventTime,
+    userIdentity.userName,
+    eventName,
+    requestParameters,
+    sourceIPAddress
+FROM
+    event_data_store_id
+WHERE
+    eventSource = 'iam.amazonaws.com'
+    AND eventName IN (
+      'CreateUser', 'DeleteUser',
+      'CreateRole', 'DeleteRole',
+      'AttachUserPolicy', 'DetachUserPolicy',
+      'AttachRolePolicy', 'DetachRolePolicy',
+      'PutUserPolicy', 'DeleteUserPolicy',
+      'CreateAccessKey', 'DeleteAccessKey'
+    )
+    AND eventTime > '2024-01-01 00:00:00'
+ORDER BY eventTime DESC;</code></pre>
+      </div>
+
+      <h3>비용 고려사항</h3>
+      <div class="info-box warning">
+        <div class="info-box-title">CloudTrail Lake 비용 구조</div>
+        <p>CloudTrail Lake는 <strong>수집된 이벤트 데이터량</strong>에 따라 과금됩니다.</p>
+        <ul>
+          <li><strong>수집 비용:</strong> 수집된 이벤트 데이터 GB당 과금</li>
+          <li><strong>보존 기간:</strong> 보존 기간이 길수록 누적 저장 비용 증가</li>
+          <li><strong>쿼리 비용:</strong> 스캔된 데이터량에 따라 과금</li>
+        </ul>
+        <p>ShopEasy와 같은 소규모 환경에서는 비용이 크지 않지만, <strong>데이터 이벤트(S3, Lambda)를 포함</strong>하면 비용이 급격히 증가할 수 있습니다. 시작은 관리 이벤트만으로 하고, 필요에 따라 데이터 이벤트를 추가하는 것이 좋습니다.</p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 5: 주요 보안 이벤트 필터링 -->
+    <!-- ============================================================ -->
+    <section class="content-section" id="security-events">
+      <h2>주요 보안 이벤트 필터링</h2>
+
+      <p>CloudTrail에서 기록되는 수많은 이벤트 중에서, <strong>보안상 중요한 이벤트</strong>를 실시간으로 감지하고 알림을 받는 것이 핵심입니다. CloudWatch Logs 메트릭 필터를 활용하면 특정 패턴의 이벤트가 발생할 때 즉시 알림을 받을 수 있습니다.</p>
+
+      <h3>루트 계정 로그인 감지</h3>
+      <p>루트 계정은 AWS 계정의 최고 권한을 가진 계정입니다. ShopEasy 운영에서 루트 계정은 <strong>절대 일상적으로 사용하면 안 되며</strong>, 로그인이 감지되면 즉시 알림을 받아야 합니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">text</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># CloudWatch Logs 메트릭 필터 패턴 - 루트 계정 로그인
+{ $.userIdentity.type = "Root" && $.userIdentity.invokedBy NOT EXISTS && $.eventType != "AwsServiceEvent" }</code></pre>
+      </div>
+
+      <h3>IAM 정책 변경 탐지</h3>
+      <p>IAM 정책 변경은 권한 상승 공격의 전조일 수 있습니다. ShopEasy 환경에서 비인가된 IAM 변경이 발생하면 즉시 감지해야 합니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">text</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># CloudWatch Logs 메트릭 필터 패턴 - IAM 정책 변경
+{ ($.eventName = "PutGroupPolicy") || ($.eventName = "PutRolePolicy") || ($.eventName = "PutUserPolicy") || ($.eventName = "CreatePolicy") || ($.eventName = "DeletePolicy") || ($.eventName = "CreatePolicyVersion") || ($.eventName = "DeletePolicyVersion") || ($.eventName = "AttachRolePolicy") || ($.eventName = "DetachRolePolicy") || ($.eventName = "AttachUserPolicy") || ($.eventName = "DetachUserPolicy") || ($.eventName = "AttachGroupPolicy") || ($.eventName = "DetachGroupPolicy") }</code></pre>
+      </div>
+
+      <h3>보안그룹 규칙 변경 탐지</h3>
+      <p>보안그룹 규칙이 변경되면 ShopEasy의 네트워크 보안 경계가 변경될 수 있습니다. 특히 0.0.0.0/0으로의 인바운드 허용은 위험합니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">text</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># CloudWatch Logs 메트릭 필터 패턴 - 보안그룹 변경
+{ ($.eventName = "AuthorizeSecurityGroupIngress") || ($.eventName = "AuthorizeSecurityGroupEgress") || ($.eventName = "RevokeSecurityGroupIngress") || ($.eventName = "RevokeSecurityGroupEgress") || ($.eventName = "CreateSecurityGroup") || ($.eventName = "DeleteSecurityGroup") }</code></pre>
+      </div>
+
+      <h3>S3 퍼블릭 설정 변경 탐지</h3>
+      <p>S3 버킷이 의도치 않게 퍼블릭으로 설정되면 고객 데이터가 유출될 수 있습니다. ShopEasy의 고객 정보, 주문 데이터 등이 저장된 버킷은 절대 퍼블릭이 되어서는 안 됩니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">text</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># CloudWatch Logs 메트릭 필터 패턴 - S3 퍼블릭 설정 변경
+{ ($.eventName = "PutBucketAcl") || ($.eventName = "PutBucketPolicy") || ($.eventName = "PutBucketPublicAccessBlock") || ($.eventName = "DeleteBucketPolicy") || ($.eventName = "DeleteBucketPublicAccessBlock") }</code></pre>
+      </div>
+
+      <h3>추가 보안 이벤트 필터 패턴</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>보안 이벤트</th>
+            <th>핵심 eventName</th>
+            <th>위험도</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>MFA 비활성화</td>
+            <td><code>DeactivateMFADevice</code></td>
+            <td>높음</td>
+          </tr>
+          <tr>
+            <td>CloudTrail 중지</td>
+            <td><code>StopLogging</code>, <code>DeleteTrail</code></td>
+            <td>매우 높음</td>
+          </tr>
+          <tr>
+            <td>KMS 키 삭제 예약</td>
+            <td><code>DisableKey</code>, <code>ScheduleKeyDeletion</code></td>
+            <td>높음</td>
+          </tr>
+          <tr>
+            <td>비인가 API 호출</td>
+            <td><code>errorCode = "AccessDenied"</code></td>
+            <td>중간</td>
+          </tr>
+          <tr>
+            <td>콘솔 로그인 실패</td>
+            <td><code>ConsoleLogin</code> (실패 응답)</td>
+            <td>중간</td>
+          </tr>
+          <tr>
+            <td>네트워크 변경</td>
+            <td><code>CreateVpc</code>, <code>DeleteVpc</code>, <code>ModifyVpcAttribute</code></td>
+            <td>높음</td>
+          </tr>
+          <tr>
+            <td>RDS 퍼블릭 설정</td>
+            <td><code>ModifyDBInstance</code> (PubliclyAccessible)</td>
+            <td>높음</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box danger">
+        <div class="info-box-title">가장 위험한 이벤트: CloudTrail 중지</div>
+        <p>공격자가 가장 먼저 시도하는 것 중 하나는 <strong>CloudTrail 로깅을 중지</strong>하는 것입니다. 자신의 활동 흔적을 남기지 않기 위해서입니다. <code>StopLogging</code> 이벤트는 반드시 <strong>최우선 알림</strong>으로 설정해야 합니다.</p>
+        <div class="code-block">
+          <div class="code-header">
+            <span class="lang">text</span>
+            <button class="copy-btn">복사</button>
+          </div>
+          <pre><code># CloudTrail 중지/삭제 감지 필터 패턴
+{ ($.eventName = "StopLogging") || ($.eventName = "DeleteTrail") || ($.eventName = "UpdateTrail") }</code></pre>
+        </div>
+      </div>
+
+      <!-- Lab: CloudWatch Logs 필터로 보안 이벤트 알림 설정 -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: CloudWatch Logs 메트릭 필터로 보안 이벤트 알림 설정</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">CloudWatch 콘솔 이동</div>
+            <p>AWS Management Console에서 <strong>CloudWatch</strong> 서비스로 이동합니다.</p>
+            <p>좌측 메뉴에서 <strong>로그 &gt; 로그 그룹</strong>을 클릭합니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">CloudTrail 로그 그룹 선택</div>
+            <p>앞서 트레일 생성 시 설정한 로그 그룹 <code>shopeasy-cloudtrail-logs</code>를 클릭합니다.</p>
+            <p>로그 스트림에 CloudTrail 이벤트가 전달되고 있는지 확인합니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">메트릭 필터 생성 - 루트 계정 로그인</div>
+            <p><strong>메트릭 필터</strong> 탭 &gt; <strong>메트릭 필터 생성</strong>을 클릭합니다.</p>
+            <p>다음과 같이 설정합니다:</p>
+            <ul>
+              <li><strong>필터 패턴:</strong></li>
+            </ul>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">text</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>{ $.userIdentity.type = "Root" && $.userIdentity.invokedBy NOT EXISTS && $.eventType != "AwsServiceEvent" }</code></pre>
+            </div>
+            <ul>
+              <li><strong>필터 이름:</strong> <code>RootAccountUsage</code></li>
+              <li><strong>메트릭 네임스페이스:</strong> <code>ShopEasy/CloudTrailMetrics</code></li>
+              <li><strong>메트릭 이름:</strong> <code>RootAccountUsageCount</code></li>
+              <li><strong>메트릭 값:</strong> <code>1</code></li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">SNS 주제 생성</div>
+            <p><strong>SNS</strong> 서비스로 이동하여 알림을 받을 주제를 생성합니다.</p>
+            <ul>
+              <li><strong>주제 이름:</strong> <code>shopeasy-security-alerts</code></li>
+              <li><strong>프로토콜:</strong> 이메일</li>
+              <li><strong>엔드포인트:</strong> 보안 담당자 이메일 주소</li>
+            </ul>
+            <p>구독 확인 이메일을 받아 확인합니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">CloudWatch 경보 생성</div>
+            <p>CloudWatch로 돌아가서 <strong>경보 &gt; 경보 생성</strong>을 클릭합니다.</p>
+            <ul>
+              <li><strong>메트릭:</strong> <code>ShopEasy/CloudTrailMetrics</code> 네임스페이스에서 <code>RootAccountUsageCount</code> 선택</li>
+              <li><strong>통계:</strong> 합계 (Sum)</li>
+              <li><strong>기간:</strong> 5분</li>
+              <li><strong>조건:</strong> 정적 임계값, 크거나 같음, 1</li>
+              <li><strong>알림:</strong> SNS 주제 <code>shopeasy-security-alerts</code> 선택</li>
+              <li><strong>경보 이름:</strong> <code>ShopEasy-RootAccountUsage</code></li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">추가 메트릭 필터 및 경보 생성</div>
+            <p>동일한 방법으로 다음 보안 이벤트에 대한 메트릭 필터와 경보를 추가합니다:</p>
+            <ul>
+              <li>IAM 정책 변경 탐지</li>
+              <li>보안그룹 규칙 변경 탐지</li>
+              <li>CloudTrail 중지 탐지</li>
+              <li>S3 퍼블릭 설정 변경 탐지</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">테스트 및 확인</div>
+            <p>루트 계정으로 AWS 콘솔에 로그인하여 경보가 올바르게 트리거되는지 확인합니다.</p>
+            <p>SNS 이메일이 수신되면 설정이 완료된 것입니다. 테스트 후 <strong>루트 계정을 다시 로그아웃</strong>합니다.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">ShopEasy CloudTrail 보안 모범 사례 요약</div>
+        <ul>
+          <li><strong>모든 리전</strong>에 대한 트레일을 생성합니다</li>
+          <li>로그 파일 <strong>무결성 검증</strong>을 반드시 활성화합니다</li>
+          <li>로그 파일을 <strong>KMS로 암호화</strong>합니다</li>
+          <li>S3 버킷에 <strong>버전 관리와 MFA Delete</strong>를 적용합니다</li>
+          <li>CloudWatch Logs로 전송하여 <strong>실시간 보안 알림</strong>을 설정합니다</li>
+          <li>최소 <strong>1년 이상</strong> 로그를 보관합니다 (S3 Glacier로 자동 이동)</li>
+          <li>루트 로그인, IAM 변경, CloudTrail 중지 등 <strong>핵심 보안 이벤트에 대한 경보</strong>를 설정합니다</li>
+          <li>정기적으로 <strong>로그 파일 무결성을 검증</strong>합니다</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Chapter Navigation -->
+    <div class="chapter-nav">
+      <a href="16-lambda-security.html" class="prev">이전: Lambda 보안</a>
+      <a href="18-aws-config.html" class="next">다음: AWS Config</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/17-cloudtrail.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>

@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/01-cloud-security-overview.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>클라우드 보안 개요 & 공동 책임 모델 - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li><a href="#onprem-vs-cloud">온프레미스 vs 클라우드 보안</a></li>
+      <li><a href="#shared-responsibility">AWS 공동 책임 모델</a></li>
+      <li><a href="#service-responsibility">서비스별 책임 범위</a></li>
+      <li><a href="#security-principles">클라우드 보안 핵심 원칙</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 01</span>
+      <h1>클라우드 보안 개요 & 공동 책임 모델</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>온프레미스 환경과 클라우드 환경의 보안 차이를 이해한다</li>
+          <li>AWS 공동 책임 모델(Shared Responsibility Model)의 개념을 설명할 수 있다</li>
+          <li>IaaS, PaaS, SaaS 서비스 유형별 책임 범위를 구분할 수 있다</li>
+          <li>클라우드 보안의 4가지 핵심 원칙을 실무에 적용할 수 있다</li>
+          <li>ShopEasy 이커머스 애플리케이션에 적용할 보안 관점을 수립한다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ============================================
+         섹션 1: 온프레미스 vs 클라우드 보안 차이
+         ============================================ -->
+    <section class="content-section" id="onprem-vs-cloud">
+      <h2>1. 온프레미스 vs 클라우드 보안 차이</h2>
+
+      <h3>1.1 온프레미스 보안의 전통적 접근 방식</h3>
+      <p>
+        전통적인 온프레미스(On-Premises) 환경에서는 기업이 데이터센터의 <strong>모든 계층</strong>에 대한 보안 책임을 집니다.
+        물리적 보안(출입 통제, CCTV, 잠금장치)부터 네트워크 장비(방화벽, IDS/IPS, 스위치), 서버 하드웨어,
+        운영체제 패치, 미들웨어, 애플리케이션 코드, 그리고 데이터에 이르기까지 전부 직접 관리해야 합니다.
+      </p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 자가 주택 vs 아파트</div>
+        <p>
+          온프레미스 보안은 <strong>단독 주택을 소유</strong>한 것과 같습니다. 지붕 수리, 정원 관리, 담장 설치, 도어록 교체 등
+          집의 모든 것을 직접 책임져야 합니다. 반면 클라우드는 <strong>아파트에 사는 것</strong>과 비슷합니다.
+          건물 구조, 엘리베이터, 공용 시설은 관리사무소(AWS)가 관리하고, 세대 내부의 인테리어와 귀중품 관리는
+          입주자(고객)가 책임집니다.
+        </p>
+      </div>
+
+      <p>온프레미스 환경의 보안 특징을 정리하면 다음과 같습니다:</p>
+
+      <ul>
+        <li><strong>물리적 경계가 명확:</strong> 데이터센터 건물 자체가 보안 경계. 출입 통제로 1차 방어</li>
+        <li><strong>네트워크 경계(Perimeter) 중심:</strong> 방화벽이 내부/외부를 명확히 구분. "성벽 안은 안전하다"는 개념</li>
+        <li><strong>하드웨어 직접 통제:</strong> 서버, 스토리지, 네트워크 장비를 물리적으로 소유하고 관리</li>
+        <li><strong>변경 속도가 느림:</strong> 보안 장비 도입에 수주~수개월 소요. 조달, 설치, 설정 과정 필요</li>
+        <li><strong>확장성 제한:</strong> 보안 인프라를 확장하려면 추가 하드웨어 구매 필요</li>
+      </ul>
+
+      <h3>1.2 클라우드 환경에서 달라지는 점</h3>
+      <p>
+        클라우드로 전환하면 보안 패러다임이 근본적으로 변합니다.
+        더 이상 물리적 서버를 만질 수 없고, 네트워크 경계가 사라지며, 모든 것이 API를 통해 관리됩니다.
+      </p>
+
+      <h4>경계의 소멸 (Dissolving Perimeters)</h4>
+      <p>
+        온프레미스에서는 방화벽 안쪽이 "신뢰 영역"이었습니다. 하지만 클라우드에서는 어디서든 인터넷을 통해
+        리소스에 접근할 수 있으므로, 전통적인 네트워크 경계 개념이 무의미해집니다.
+        대신 <strong>자격증명(Identity)</strong>이 새로운 경계가 됩니다.
+      </p>
+
+      <div class="info-box concept">
+        <div class="info-box-title">핵심 개념: "Identity is the New Perimeter"</div>
+        <p>
+          클라우드에서는 <strong>누가(Who)</strong> 접근하느냐가 가장 중요한 보안 경계입니다.
+          IAM 사용자, 역할, 정책이 방화벽의 역할을 대체합니다.
+          유출된 Access Key 하나로 전체 인프라가 위험에 처할 수 있습니다.
+        </p>
+      </div>
+
+      <h4>공유 인프라 (Shared Infrastructure)</h4>
+      <p>
+        퍼블릭 클라우드에서는 여러 고객의 워크로드가 동일한 물리적 하드웨어 위에서 실행됩니다.
+        AWS는 하이퍼바이저 수준의 격리를 통해 테넌트 간 분리를 보장하지만,
+        고객은 자신의 영역에서 적절한 보안 설정을 해야 합니다.
+      </p>
+
+      <h4>API 기반 관리</h4>
+      <p>
+        클라우드의 모든 리소스는 API를 통해 생성, 수정, 삭제됩니다. 이는 양날의 검입니다:
+      </p>
+      <ul>
+        <li><strong>장점:</strong> 보안 정책을 코드로 정의(Infrastructure as Code)하여 일관성 있게 적용 가능</li>
+        <li><strong>위험:</strong> 잘못된 API 호출 하나로 S3 버킷을 퍼블릭으로 열거나, 보안그룹에 0.0.0.0/0을 추가할 수 있음</li>
+      </ul>
+
+      <h3>1.3 클라우드 보안의 장점과 새로운 과제</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>구분</th>
+            <th>온프레미스</th>
+            <th>클라우드 (AWS)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>물리적 보안</strong></td>
+            <td>직접 관리 (비용 큼)</td>
+            <td>AWS가 전담 (SOC2, ISO27001 인증)</td>
+          </tr>
+          <tr>
+            <td><strong>보안 업데이트</strong></td>
+            <td>수동 패치, 다운타임 필요</td>
+            <td>관리형 서비스는 자동 패치</td>
+          </tr>
+          <tr>
+            <td><strong>확장성</strong></td>
+            <td>장비 추가 구매 필요</td>
+            <td>클릭 한 번으로 글로벌 WAF 배포</td>
+          </tr>
+          <tr>
+            <td><strong>가시성</strong></td>
+            <td>별도 SIEM 구축 필요</td>
+            <td>CloudTrail, Config, GuardDuty 등 내장</td>
+          </tr>
+          <tr>
+            <td><strong>암호화</strong></td>
+            <td>HSM 직접 구매/운영</td>
+            <td>KMS로 키 관리, 기본 암호화 제공</td>
+          </tr>
+          <tr>
+            <td><strong>재해 복구</strong></td>
+            <td>DR 센터 별도 운영 (비용 큼)</td>
+            <td>멀티 리전/AZ로 비교적 쉽게 구성</td>
+          </tr>
+          <tr>
+            <td><strong>컴플라이언스</strong></td>
+            <td>직접 감사 대응</td>
+            <td>AWS Artifact로 인증서 확인, Config Rules로 자동 감사</td>
+          </tr>
+          <tr>
+            <td><strong>새로운 과제</strong></td>
+            <td>내부 위협 위주</td>
+            <td>설정 오류, Access Key 유출, 과도한 권한, 퍼블릭 노출</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box warning">
+        <div class="info-box-title">주의: 클라우드 보안 사고의 대부분은 설정 오류</div>
+        <p>
+          2024년 기준, 클라우드 보안 사고의 약 <strong>80% 이상</strong>이 고객 측 설정 오류에서 발생합니다.
+          S3 버킷 퍼블릭 노출, 보안그룹 전체 개방, IAM 과도 권한 등이 대표적입니다.
+          이는 AWS의 보안 결함이 아니라, <strong>공동 책임 모델에서 고객 영역의 관리 부재</strong>가 원인입니다.
+        </p>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">ShopEasy와의 연결</div>
+        <p>
+          기초 과정에서 구축한 ShopEasy는 빠른 배포에 초점을 맞추어 보안 설정이 최소화되어 있습니다.
+          이 과정을 통해 ShopEasy에 체계적인 보안을 적용하면서, 클라우드 보안의 핵심 원칙을 실습합니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================
+         섹션 2: AWS 공동 책임 모델
+         ============================================ -->
+    <section class="content-section" id="shared-responsibility">
+      <h2>2. AWS 공동 책임 모델</h2>
+
+      <h3>2.1 Shared Responsibility Model이란?</h3>
+      <p>
+        AWS 공동 책임 모델(Shared Responsibility Model)은 클라우드 보안의 가장 기본적이면서도 중요한 개념입니다.
+        한마디로 요약하면: <strong>"AWS는 클라우드 자체의 보안을, 고객은 클라우드 안에서의 보안을 책임진다"</strong>입니다.
+      </p>
+
+      <div class="info-box concept">
+        <div class="info-box-title">Security OF the Cloud vs Security IN the Cloud</div>
+        <p>
+          <strong>Security OF the Cloud (AWS 책임):</strong> 클라우드 인프라 자체를 보호합니다.
+          글로벌 데이터센터, 하드웨어, 네트워킹 장비, 하이퍼바이저, 호스트 OS를 AWS가 관리합니다.<br><br>
+          <strong>Security IN the Cloud (고객 책임):</strong> 클라우드 위에서 실행하는 모든 것을 보호합니다.
+          게스트 OS 패치, 애플리케이션 코드, 데이터 암호화, IAM 설정, 네트워크 설정(보안그룹, NACL)이 여기에 해당합니다.
+        </p>
+      </div>
+
+      <h3>2.2 AWS가 책임지는 영역</h3>
+      <p>AWS는 다음과 같은 영역의 보안을 책임지고 관리합니다:</p>
+
+      <ul>
+        <li><strong>물리적 보안:</strong> 데이터센터 건물, 출입 통제, 환경 제어(온도, 습도), 전력 공급, 재해 대비</li>
+        <li><strong>하드웨어/글로벌 인프라:</strong> 서버, 스토리지, 네트워킹 장비의 유지보수와 교체</li>
+        <li><strong>호스트 운영체제:</strong> 하이퍼바이저 및 호스트 OS 패치와 보안 업데이트</li>
+        <li><strong>네트워킹 인프라:</strong> 리전, 가용 영역, 엣지 로케이션 간 연결</li>
+        <li><strong>관리형 서비스 인프라:</strong> RDS, DynamoDB, Lambda 등의 기반 인프라 운영</li>
+        <li><strong>컴플라이언스:</strong> SOC 1/2/3, PCI DSS, ISO 27001/27017/27018, HIPAA 등 국제 인증 획득 및 유지</li>
+      </ul>
+
+      <h3>2.3 고객이 책임지는 영역</h3>
+      <p>고객은 클라우드에서 사용하는 모든 서비스와 데이터의 보안을 직접 관리해야 합니다:</p>
+
+      <ul>
+        <li><strong>데이터 관리:</strong> 데이터 분류, 암호화, 백업, 접근 제어</li>
+        <li><strong>자격증명 & 접근 제어:</strong> IAM 사용자/역할/정책 관리, MFA 설정, 비밀번호 정책</li>
+        <li><strong>운영체제 & 네트워크:</strong> EC2 인스턴스의 게스트 OS 패치, 보안그룹/NACL 설정</li>
+        <li><strong>애플리케이션 보안:</strong> 코드 보안, 입력 검증, 인증/인가 로직</li>
+        <li><strong>네트워크 트래픽 보호:</strong> SSL/TLS 적용, VPN 설정, 전송 중 데이터 암호화</li>
+        <li><strong>로깅 & 모니터링:</strong> CloudTrail 활성화, 로그 분석, 알림 설정</li>
+      </ul>
+
+      <h3>2.4 공동 책임 모델 다이어그램</h3>
+
+      <div class="diagram">
+        <div class="diagram-title">AWS 공동 책임 모델 (Shared Responsibility Model)</div>
+
+        <div style="text-align:center; margin-bottom:1rem;">
+          <span style="display:inline-block; padding:4px 16px; background:#FFEBEE; border:2px solid #C62828; border-radius:6px; font-weight:700; color:#C62828; font-size:0.85rem;">고객 책임 (Security IN the Cloud)</span>
+        </div>
+
+        <div class="diagram-row">
+          <div class="diagram-box security" style="min-width:140px;">
+            <div class="box-title">고객 데이터</div>
+            <div class="box-sub">분류 / 암호화 / 백업</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box iam" style="min-width:140px;">
+            <div class="box-title">IAM</div>
+            <div class="box-sub">사용자, 역할, 정책, MFA</div>
+          </div>
+          <div class="diagram-box security" style="min-width:140px;">
+            <div class="box-title">애플리케이션</div>
+            <div class="box-sub">코드 보안, 패치</div>
+          </div>
+          <div class="diagram-box encryption" style="min-width:140px;">
+            <div class="box-title">암호화</div>
+            <div class="box-sub">전송 중 / 저장 시</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box compute" style="min-width:140px;">
+            <div class="box-title">게스트 OS</div>
+            <div class="box-sub">EC2 OS 패치, 설정</div>
+          </div>
+          <div class="diagram-box network" style="min-width:140px;">
+            <div class="box-title">네트워크 설정</div>
+            <div class="box-sub">SG, NACL, VPC</div>
+          </div>
+          <div class="diagram-box waf" style="min-width:140px;">
+            <div class="box-title">방화벽 구성</div>
+            <div class="box-sub">WAF, Shield 설정</div>
+          </div>
+        </div>
+
+        <div style="text-align:center; margin:1rem 0; font-size:1.5rem; color:#999;">- - - - - - - - - - - - - - - - - - - - - - - - - - - - -</div>
+        <div style="text-align:center; margin-bottom:0.5rem; font-size:0.8rem; color:#666; font-weight:600;">공동 책임 경계</div>
+        <div style="text-align:center; margin:0.5rem 0 1rem; font-size:1.5rem; color:#999;">- - - - - - - - - - - - - - - - - - - - - - - - - - - - -</div>
+
+        <div style="text-align:center; margin-bottom:1rem;">
+          <span style="display:inline-block; padding:4px 16px; background:#E8EAF6; border:2px solid #1A237E; border-radius:6px; font-weight:700; color:#1A237E; font-size:0.85rem;">AWS 책임 (Security OF the Cloud)</span>
+        </div>
+
+        <div class="diagram-row">
+          <div class="diagram-box shield" style="min-width:140px;">
+            <div class="box-title">소프트웨어</div>
+            <div class="box-sub">컴퓨팅, 스토리지, DB, 네트워킹</div>
+          </div>
+          <div class="diagram-box shield" style="min-width:140px;">
+            <div class="box-title">하이퍼바이저</div>
+            <div class="box-sub">가상화, 테넌트 격리</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box shield" style="min-width:140px;">
+            <div class="box-title">하드웨어/인프라</div>
+            <div class="box-sub">서버, 스토리지, 네트워크 장비</div>
+          </div>
+          <div class="diagram-box shield" style="min-width:140px;">
+            <div class="box-title">물리적 보안</div>
+            <div class="box-sub">데이터센터, 출입통제, 전력</div>
+          </div>
+          <div class="diagram-box shield" style="min-width:140px;">
+            <div class="box-title">글로벌 인프라</div>
+            <div class="box-sub">리전, AZ, 엣지 로케이션</div>
+          </div>
+        </div>
+      </div>
+
+      <h3>2.5 실제 사례로 이해하기</h3>
+
+      <div class="info-box danger">
+        <div class="info-box-title">사례 1: S3 버킷 퍼블릭 노출 사고</div>
+        <p>
+          2017년, 미국의 한 대형 통신사가 AWS S3 버킷의 접근 정책을 잘못 설정하여
+          약 1억 4천만 명의 개인정보가 노출되었습니다.
+          S3 서비스 자체에는 문제가 없었으며, <strong>고객이 버킷 정책을 퍼블릭으로 설정한 것</strong>이 원인이었습니다.
+          이는 명확히 <strong>"Security IN the Cloud" (고객 책임)</strong> 영역입니다.
+        </p>
+      </div>
+
+      <div class="info-box danger">
+        <div class="info-box-title">사례 2: Access Key 유출</div>
+        <p>
+          개발자가 GitHub 공개 리포지토리에 AWS Access Key를 실수로 커밋했습니다.
+          수 분 내에 봇이 해당 키를 탐지하여 대량의 EC2 인스턴스를 암호화폐 채굴에 사용했습니다.
+          하루 만에 수만 달러의 청구가 발생했습니다. 이 역시 고객 책임 영역입니다.
+          <strong>해결책:</strong> IAM 역할 사용, Access Key 대신 임시 자격증명 활용, git-secrets 도구 적용.
+        </p>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">사례 3: AWS의 책임 이행</div>
+        <p>
+          2019년 AWS가 하이퍼바이저 취약점(Nitro 관련)을 발견했을 때,
+          고객에게 영향 없이 인프라를 패치했습니다.
+          고객은 어떤 조치도 취할 필요가 없었으며, 이는 <strong>"Security OF the Cloud" (AWS 책임)</strong> 영역이기 때문입니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================
+         섹션 3: 서비스별 책임 범위
+         ============================================ -->
+    <section class="content-section" id="service-responsibility">
+      <h2>3. 서비스별 책임 범위</h2>
+
+      <p>
+        AWS의 모든 서비스가 동일한 책임 구조를 갖는 것은 아닙니다.
+        서비스 유형에 따라 고객과 AWS의 책임 범위가 달라집니다.
+        일반적으로 <strong>IaaS는 고객 책임이 많고, SaaS로 갈수록 AWS 책임이 커집니다</strong>.
+      </p>
+
+      <h3>3.1 IaaS (Infrastructure as a Service) - EC2</h3>
+      <p>
+        EC2는 가장 기본적인 IaaS 서비스로, 고객에게 <strong>가장 많은 제어권과 동시에 가장 많은 보안 책임</strong>을 부여합니다.
+      </p>
+
+      <ul>
+        <li><strong>고객 책임:</strong> 게스트 OS 선택/패치, 미들웨어 설치/설정, 애플리케이션 배포/보안, 보안그룹 설정, 데이터 암호화, 로깅 설정</li>
+        <li><strong>AWS 책임:</strong> 물리 서버, 네트워크 인프라, 하이퍼바이저(Nitro), 호스트 OS</li>
+      </ul>
+
+      <div class="info-box warning">
+        <div class="info-box-title">EC2에서 자주 발생하는 보안 실수</div>
+        <p>
+          1) OS 패치를 방치하여 알려진 취약점 노출<br>
+          2) 보안그룹에서 SSH(22번 포트)를 0.0.0.0/0으로 전체 개방<br>
+          3) 인스턴스에 Access Key를 하드코딩<br>
+          4) 퍼블릭 서브넷에 불필요한 인스턴스 배치
+        </p>
+      </div>
+
+      <h3>3.2 PaaS (Platform as a Service) - RDS, Lambda</h3>
+      <p>
+        관리형 서비스(Managed Service)를 사용하면 AWS가 더 많은 인프라를 관리합니다.
+        고객은 서비스 설정과 데이터에만 집중할 수 있습니다.
+      </p>
+
+      <h4>RDS (Relational Database Service)</h4>
+      <ul>
+        <li><strong>AWS 관리:</strong> DB 엔진 패치(선택 가능), 백업 인프라, 하드웨어 유지보수, OS 패치</li>
+        <li><strong>고객 책임:</strong> DB 사용자/비밀번호 관리, 보안그룹 설정, 암호화 활성화 여부, 접근 권한 관리, 데이터 분류</li>
+      </ul>
+
+      <h4>Lambda (Serverless)</h4>
+      <ul>
+        <li><strong>AWS 관리:</strong> 실행 환경, 런타임 보안, OS, 확장성, 가용성</li>
+        <li><strong>고객 책임:</strong> 함수 코드 보안, IAM 실행 역할 설정, 환경변수 암호화, VPC 설정(필요시)</li>
+      </ul>
+
+      <h3>3.3 SaaS (Software as a Service) - S3 정적 호스팅</h3>
+      <p>
+        S3와 같은 완전 관리형 서비스에서는 AWS가 대부분의 인프라와 서비스 운영을 담당합니다.
+        고객은 <strong>데이터와 접근 제어</strong>에만 집중하면 됩니다.
+      </p>
+      <ul>
+        <li><strong>AWS 관리:</strong> 스토리지 인프라, 내구성(11 nines), 가용성, 서비스 운영 전체</li>
+        <li><strong>고객 책임:</strong> 버킷 정책, 퍼블릭 액세스 차단 설정, 데이터 암호화, 객체 ACL, 버전 관리</li>
+      </ul>
+
+      <h3>3.4 서비스별 책임 비교 테이블</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>보안 계층</th>
+            <th>IaaS (EC2)</th>
+            <th>PaaS (RDS)</th>
+            <th>PaaS (Lambda)</th>
+            <th>SaaS (S3)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>데이터</strong></td>
+            <td>고객</td>
+            <td>고객</td>
+            <td>고객</td>
+            <td>고객</td>
+          </tr>
+          <tr>
+            <td><strong>애플리케이션</strong></td>
+            <td>고객</td>
+            <td>-</td>
+            <td>고객 (코드)</td>
+            <td>-</td>
+          </tr>
+          <tr>
+            <td><strong>IAM / 접근제어</strong></td>
+            <td>고객</td>
+            <td>고객</td>
+            <td>고객</td>
+            <td>고객</td>
+          </tr>
+          <tr>
+            <td><strong>게스트 OS</strong></td>
+            <td>고객</td>
+            <td>AWS</td>
+            <td>AWS</td>
+            <td>AWS</td>
+          </tr>
+          <tr>
+            <td><strong>네트워크 설정</strong></td>
+            <td>고객</td>
+            <td>고객 (SG)</td>
+            <td>고객 (VPC 선택)</td>
+            <td>고객 (정책)</td>
+          </tr>
+          <tr>
+            <td><strong>암호화</strong></td>
+            <td>고객</td>
+            <td>고객 (설정)</td>
+            <td>고객 (환경변수)</td>
+            <td>고객 (설정)</td>
+          </tr>
+          <tr>
+            <td><strong>플랫폼/미들웨어</strong></td>
+            <td>고객</td>
+            <td>AWS</td>
+            <td>AWS</td>
+            <td>AWS</td>
+          </tr>
+          <tr>
+            <td><strong>인프라</strong></td>
+            <td>AWS</td>
+            <td>AWS</td>
+            <td>AWS</td>
+            <td>AWS</td>
+          </tr>
+          <tr>
+            <td><strong>물리적 보안</strong></td>
+            <td>AWS</td>
+            <td>AWS</td>
+            <td>AWS</td>
+            <td>AWS</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">핵심: 관리형 서비스를 사용할수록 보안 부담이 줄어든다</div>
+        <p>
+          EC2에 직접 MySQL을 설치하는 것보다 RDS를 사용하면, OS 패치와 DB 엔진 업데이트를 AWS에 위임할 수 있습니다.
+          서버리스(Lambda)를 사용하면 서버 관리 자체가 불필요합니다.
+          <strong>"관리형 서비스 = 보안 책임 범위 축소"</strong>라는 공식을 기억하세요.
+        </p>
+      </div>
+
+      <h3>3.5 ShopEasy 아키텍처에 적용</h3>
+      <p>ShopEasy 이커머스 애플리케이션의 각 구성 요소를 서비스별 책임 관점에서 분석해봅니다:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>ShopEasy 구성 요소</th>
+            <th>AWS 서비스</th>
+            <th>서비스 유형</th>
+            <th>고객 핵심 보안 책임</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>웹 서버 / API 서버</td>
+            <td>EC2</td>
+            <td>IaaS</td>
+            <td>OS 패치, 보안그룹, Node.js 보안, 코드 보안</td>
+          </tr>
+          <tr>
+            <td>데이터베이스</td>
+            <td>RDS (MySQL)</td>
+            <td>PaaS</td>
+            <td>DB 사용자 관리, 암호화 설정, 접근 제어</td>
+          </tr>
+          <tr>
+            <td>상품 이미지 저장</td>
+            <td>S3</td>
+            <td>SaaS</td>
+            <td>버킷 정책, 퍼블릭 액세스 차단, 암호화</td>
+          </tr>
+          <tr>
+            <td>CDN</td>
+            <td>CloudFront</td>
+            <td>SaaS</td>
+            <td>HTTPS 강제, OAC 설정, 지역 제한</td>
+          </tr>
+          <tr>
+            <td>로드밸런서</td>
+            <td>ALB</td>
+            <td>PaaS</td>
+            <td>리스너 설정, SSL 인증서, 보안그룹</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box tip">
+        <div class="info-box-title">실습 미리보기</div>
+        <p>
+          이 과정을 진행하면서 위 테이블의 각 "고객 핵심 보안 책임" 항목을 하나씩 구현해나갈 것입니다.
+          Chapter 06에서 IAM 설계, Chapter 07에서 VPC 보안, Chapter 10에서 암호화,
+          Chapter 13에서 비밀번호 관리 등을 ShopEasy에 직접 적용합니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ============================================
+         섹션 4: 클라우드 보안의 핵심 원칙
+         ============================================ -->
+    <section class="content-section" id="security-principles">
+      <h2>4. 클라우드 보안의 핵심 원칙</h2>
+
+      <p>
+        클라우드 보안을 효과적으로 구현하기 위한 4가지 핵심 원칙을 알아봅니다.
+        이 원칙들은 AWS Well-Architected Framework의 보안 필러(Security Pillar)에도 반영되어 있으며,
+        이 과정 전체를 관통하는 기본 철학입니다.
+      </p>
+
+      <h3>4.1 최소 권한 원칙 (Principle of Least Privilege)</h3>
+
+      <div class="info-box concept">
+        <div class="info-box-title">정의</div>
+        <p>
+          사용자, 서비스, 애플리케이션에 <strong>업무 수행에 꼭 필요한 최소한의 권한만</strong> 부여하는 원칙입니다.
+          "만약을 위해 넓은 권한을 주자"는 접근은 절대 하지 않습니다.
+        </p>
+      </div>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 호텔 키 카드</div>
+        <p>
+          호텔에서 투숙객에게 모든 방의 마스터키를 주지 않습니다.
+          본인 객실의 키만 줍니다. 수영장을 이용하려면 별도의 접근 권한이 필요합니다.
+          AWS에서도 마찬가지로, S3에만 접근하면 되는 서비스에 EC2 관리 권한까지 줄 필요가 없습니다.
+        </p>
+      </div>
+
+      <p>최소 권한 원칙의 실무 적용:</p>
+      <ul>
+        <li><strong>와일드카드(*) 지양:</strong> <code>"Action": "s3:*"</code> 대신 <code>"Action": "s3:GetObject"</code>처럼 구체적으로</li>
+        <li><strong>리소스 범위 한정:</strong> <code>"Resource": "*"</code> 대신 특정 ARN 지정</li>
+        <li><strong>정기적 검토:</strong> IAM Access Analyzer로 미사용 권한 탐지 및 제거</li>
+        <li><strong>임시 자격증명 사용:</strong> 영구 Access Key 대신 IAM 역할과 STS 활용</li>
+      </ul>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowReadProductImages",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::shopeasy-product-images",
+        "arn:aws:s3:::shopeasy-product-images/*"
+      ]
+    }
+  ]
+}</code></pre>
+      </div>
+      <p>위 정책은 ShopEasy의 상품 이미지 버킷에 대해 <strong>읽기 전용</strong> 접근만 허용하는 최소 권한 정책의 예시입니다.</p>
+
+      <h3>4.2 심층 방어 (Defense in Depth)</h3>
+
+      <div class="info-box concept">
+        <div class="info-box-title">정의</div>
+        <p>
+          단일 보안 계층에 의존하지 않고, <strong>여러 겹의 보안 레이어</strong>를 중첩하여 방어하는 전략입니다.
+          한 계층이 뚫려도 다음 계층에서 방어할 수 있습니다.
+        </p>
+      </div>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 중세 성의 방어</div>
+        <p>
+          중세 성은 해자(물웅덩이) &rarr; 성벽 &rarr; 내성 &rarr; 탑 &rarr; 금고의 다층 방어를 갖추었습니다.
+          적이 해자를 건너도 성벽이 있고, 성벽을 넘어도 내성이 있습니다.
+          AWS에서도 마찬가지로 WAF &rarr; 보안그룹 &rarr; NACL &rarr; OS 방화벽 &rarr; 애플리케이션 인증의 다층 방어를 구성합니다.
+        </p>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">ShopEasy 심층 방어 (Defense in Depth) 계층</div>
+        <div class="diagram-row">
+          <div class="diagram-box waf" style="min-width:600px;">
+            <div class="box-title">Layer 1: 엣지 보안</div>
+            <div class="box-sub">CloudFront + AWS WAF + Shield</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-arrow down">&#x2193;</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box network" style="min-width:500px;">
+            <div class="box-title">Layer 2: 네트워크 보안</div>
+            <div class="box-sub">VPC + NACL + 보안그룹 + 프라이빗 서브넷</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-arrow down">&#x2193;</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box iam" style="min-width:400px;">
+            <div class="box-title">Layer 3: 자격증명 & 접근제어</div>
+            <div class="box-sub">IAM 역할 + 정책 + MFA + STS</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-arrow down">&#x2193;</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box compute" style="min-width:300px;">
+            <div class="box-title">Layer 4: 호스트 보안</div>
+            <div class="box-sub">OS 패치 + Inspector + SSM</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-arrow down">&#x2193;</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box encryption" style="min-width:200px;">
+            <div class="box-title">Layer 5: 데이터 보호</div>
+            <div class="box-sub">KMS + S3 암호화 + RDS 암호화 + Secrets Manager</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-arrow down">&#x2193;</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box detective" style="min-width:600px;">
+            <div class="box-title">Layer 6: 탐지 & 모니터링 (모든 계층을 감시)</div>
+            <div class="box-sub">CloudTrail + GuardDuty + Config + Security Hub + CloudWatch</div>
+          </div>
+        </div>
+      </div>
+
+      <h3>4.3 제로 트러스트 (Zero Trust)</h3>
+
+      <div class="info-box concept">
+        <div class="info-box-title">정의</div>
+        <p>
+          <strong>"절대 신뢰하지 말고, 항상 검증하라 (Never Trust, Always Verify)"</strong><br>
+          네트워크 내부에 있든 외부에 있든, 모든 접근 요청을 의심하고 인증/인가를 수행하는 보안 모델입니다.
+        </p>
+      </div>
+
+      <p>제로 트러스트의 AWS 적용 방법:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>제로 트러스트 원칙</th>
+            <th>AWS 구현 방법</th>
+            <th>ShopEasy 적용 예</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>모든 요청 인증</td>
+            <td>IAM 역할 + STS 임시 자격증명</td>
+            <td>EC2가 S3 접근 시 인스턴스 프로파일 사용</td>
+          </tr>
+          <tr>
+            <td>최소 권한 접근</td>
+            <td>세분화된 IAM 정책</td>
+            <td>API 서버에 필요한 S3, RDS 접근만 허용</td>
+          </tr>
+          <tr>
+            <td>마이크로 세그멘테이션</td>
+            <td>보안그룹 + 프라이빗 서브넷</td>
+            <td>DB는 프라이빗 서브넷, API 서버만 접근 허용</td>
+          </tr>
+          <tr>
+            <td>지속적 모니터링</td>
+            <td>CloudTrail + GuardDuty</td>
+            <td>모든 API 호출 로깅, 이상 행위 탐지</td>
+          </tr>
+          <tr>
+            <td>전송 암호화</td>
+            <td>TLS/SSL 강제</td>
+            <td>ALB-EC2, EC2-RDS 간 통신 암호화</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>4.4 자동화된 보안 (Security Automation)</h3>
+
+      <div class="info-box concept">
+        <div class="info-box-title">정의</div>
+        <p>
+          보안 정책, 감사, 대응을 <strong>수작업이 아닌 자동화</strong>로 처리하는 원칙입니다.
+          사람은 실수하지만, 코드는 일관되게 실행됩니다.
+          클라우드의 API 기반 특성을 활용하여 보안을 코드로 정의하고 자동화합니다.
+        </p>
+      </div>
+
+      <p>자동화 가능한 보안 영역:</p>
+      <ul>
+        <li><strong>인프라 코드화 (IaC):</strong> CloudFormation, Terraform으로 보안 설정을 코드로 관리</li>
+        <li><strong>컴플라이언스 자동 검사:</strong> AWS Config Rules로 설정 위반을 자동 탐지</li>
+        <li><strong>사고 자동 대응:</strong> EventBridge + Lambda로 보안 이벤트에 자동 대응</li>
+        <li><strong>패치 자동화:</strong> Systems Manager로 OS 패치를 자동 적용</li>
+        <li><strong>비밀 자동 교체:</strong> Secrets Manager로 DB 비밀번호 자동 로테이션</li>
+      </ul>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">python</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 보안 자동화 예시: 퍼블릭 S3 버킷 자동 차단
+# EventBridge 트리거 → Lambda 실행
+
+import boto3
+
+def lambda_handler(event, context):
+    s3 = boto3.client('s3')
+    bucket_name = event['detail']['requestParameters']['bucketName']
+
+    # 퍼블릭 액세스 차단 설정 적용
+    s3.put_public_access_block(
+        Bucket=bucket_name,
+        PublicAccessBlockConfiguration={
+            'BlockPublicAcls': True,
+            'IgnorePublicAcls': True,
+            'BlockPublicPolicy': True,
+            'RestrictPublicBuckets': True
+        }
+    )
+
+    print(f"퍼블릭 액세스 차단 완료: {bucket_name}")
+    return {'statusCode': 200}</code></pre>
+      </div>
+
+      <h3>4.5 4가지 원칙 요약</h3>
+
+      <div class="diagram">
+        <div class="diagram-title">클라우드 보안 4대 원칙</div>
+        <div class="diagram-row">
+          <div class="diagram-box iam">
+            <div class="box-title">최소 권한</div>
+            <div class="box-sub">꼭 필요한 권한만<br>IAM 정책 세분화</div>
+          </div>
+          <div class="diagram-box network">
+            <div class="box-title">심층 방어</div>
+            <div class="box-sub">다층 보안 레이어<br>단일 실패점 제거</div>
+          </div>
+          <div class="diagram-box security">
+            <div class="box-title">제로 트러스트</div>
+            <div class="box-sub">항상 검증<br>내부도 불신</div>
+          </div>
+          <div class="diagram-box detective">
+            <div class="box-title">자동화된 보안</div>
+            <div class="box-sub">보안을 코드로<br>사람의 실수 제거</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lab Section -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: 클라우드 보안 원칙 셀프 체크</h3>
+        <p>현재 ShopEasy 아키텍처를 4가지 보안 원칙 관점에서 진단해봅니다.</p>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">ShopEasy 현재 상태 확인</div>
+            <p>
+              AWS 콘솔에 로그인하여 기초 과정에서 구축한 ShopEasy의 현재 리소스를 확인합니다.
+              EC2, RDS, S3, ALB, VPC 등 각 서비스의 현재 보안 설정 상태를 메모합니다.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-title">최소 권한 원칙 점검</div>
+            <p>
+              IAM 콘솔로 이동하여 현재 사용자와 역할의 정책을 확인합니다.
+              <code>AdministratorAccess</code> 같은 과도한 권한이 부여되어 있지는 않은지,
+              EC2에 인스턴스 프로파일이 연결되어 있는지 확인합니다.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-title">심층 방어 점검</div>
+            <p>
+              VPC &rarr; 보안그룹에서 인바운드 규칙을 확인합니다.
+              0.0.0.0/0으로 열려 있는 포트가 있는지, DB가 퍼블릭 서브넷에 있지는 않은지 체크합니다.
+              WAF가 적용되어 있는지 확인합니다.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-title">제로 트러스트 점검</div>
+            <p>
+              EC2 인스턴스에 Access Key가 하드코딩되어 있지는 않은지 확인합니다.
+              <code>~/.aws/credentials</code> 파일이나 환경변수에 영구 키가 설정되어 있는지 체크합니다.
+              RDS 비밀번호가 코드에 하드코딩되어 있는지 확인합니다.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-title">자동화 점검</div>
+            <p>
+              CloudTrail이 활성화되어 있는지 확인합니다.
+              AWS Config가 설정되어 있는지, GuardDuty가 켜져 있는지 체크합니다.
+              대부분의 항목이 미설정 상태일 것입니다. 이것이 이 과정에서 해결할 과제입니다.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-title">보안 진단 결과 정리</div>
+            <p>
+              각 원칙별로 현재 상태를 "적용됨 / 미적용 / 부분 적용"으로 분류합니다.
+              이 결과가 이 과정의 보안 적용 로드맵이 됩니다.
+              Chapter 02에서 이 진단 결과를 기반으로 구체적인 보안 서비스 매핑을 수행합니다.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">AWS Well-Architected Framework - 보안 필러</div>
+        <p>
+          AWS는 Well-Architected Framework에서 보안을 6가지 영역으로 정리합니다:<br>
+          1) <strong>보안 기반:</strong> 계정 관리, 컨트롤 타워<br>
+          2) <strong>자격증명 & 접근 관리:</strong> IAM, 인증, 인가<br>
+          3) <strong>탐지:</strong> 로깅, 모니터링, 이상 탐지<br>
+          4) <strong>인프라 보호:</strong> VPC, 네트워크, 호스트<br>
+          5) <strong>데이터 보호:</strong> 암호화, 키 관리, 데이터 분류<br>
+          6) <strong>사고 대응:</strong> 대응 계획, 자동화, 사후 분석<br><br>
+          이 과정은 위 6가지 영역을 모두 다루며, ShopEasy에 실습으로 적용합니다.
+        </p>
+      </div>
+    </section>
+
+    <div class="chapter-nav">
+      <a href="../index-2.html" class="prev">이전: 목차</a>
+      <a href="02-security-services-map.html" class="next">다음: AWS 보안 서비스 전체 맵</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/01-cloud-security-overview.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>

@@ -1,27 +1,32 @@
 <!DOCTYPE html>
 <html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/ by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:27 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AWS 기초 - 실습 중심 강의</title>
-  <link rel="preconnect" href="https://cdn.jsdelivr.net">
-  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <title>AWS 클라우드 보안 - 실습 중심 강의</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net/">
+  <link href="../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
   <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
 
 <header class="site-header">
   <div class="header-inner">
-    <a href="index.html" class="header-logo">
-      <span class="aws-icon">AWS</span>
-      <span>기초 강의 - 실습 중심</span>
+    <a href="index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의 - 실습 중심</span>
     </a>
     <nav class="header-nav">
-      <a href="#section-infra">인프라</a>
-      <a href="#section-network">네트워킹</a>
-      <a href="#section-data">데이터</a>
-      <a href="#section-serverless">서버리스</a>
-      <a href="#section-ops">운영</a>
+      <a href="#section-foundation">보안 기초</a>
+      <a href="#section-iam">IAM 심화</a>
+      <a href="#section-network">네트워크</a>
+      <a href="#section-data">데이터 보호</a>
+      <a href="#section-app">앱 보안</a>
+      <a href="#section-detect">탐지</a>
+      <a href="#section-response">대응</a>
     </nav>
   </div>
 </header>
@@ -30,191 +35,177 @@
 
   <!-- 소개 -->
   <div style="text-align:center; margin-bottom:2rem;">
-    <h1 style="font-size:2rem; color:var(--aws-dark);">AWS 기초 강의</h1>
-    <p style="color:var(--text-light); font-size:1.1rem;">이커머스 서비스를 AWS에 배포하면서 배우는 실습 중심 과정 (40시간)</p>
+    <h1 style="font-size:2rem; color:var(--sec-dark);">AWS 클라우드 보안모델 및 아키텍처</h1>
+    <p style="color:var(--text-light); font-size:1.1rem;">이커머스 서비스(ShopEasy)에 보안을 적용하는 실습 중심 과정 (32시간)</p>
     <p style="color:var(--text-muted); font-size:0.9rem; margin-top:0.5rem;">
-      React + Node.js 쇼핑몰 &rarr; EC2 &rarr; VPC &rarr; RDS &rarr; S3 &rarr; CloudFront &rarr; Lambda &rarr; 모니터링까지
+      공동 책임 모델 &rarr; IAM 심화 &rarr; 네트워크 보안 &rarr; 데이터 암호화 &rarr; 탐지 &amp; 모니터링 &rarr; 사고 대응 &rarr; 보안 아키텍처
     </p>
   </div>
 
-  <!-- AWS 입문 & EC2 -->
-  <h2 class="section-title" id="section-infra">AWS 입문 & EC2</h2>
+  <!-- 섹션 1: 클라우드 보안 기초 -->
+  <h2 class="section-title" id="section-foundation">섹션 1: 클라우드 보안 기초</h2>
   <div class="chapter-grid">
-    <a href="chapters/01-cloud-overview.html" class="chapter-card">
+    <a href="chapters/01-cloud-security-overview.html" class="chapter-card">
       <span class="chapter-num">Chapter 01</span>
-      <h3>클라우드와 AWS 개요</h3>
-      <p>클라우드 컴퓨팅이란? IaaS/PaaS/SaaS 차이, AWS 글로벌 인프라, 프리티어</p>
-      <div class="tags"><span class="tag">이론</span></div>
+      <h3>클라우드 보안 개요 & 공동 책임 모델</h3>
+      <p>온프레미스 vs 클라우드 보안, AWS 공동 책임 모델, 서비스별 책임 범위</p>
+      <div class="tags"><span class="tag">이론</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/02-iam-basics.html" class="chapter-card">
+    <a href="chapters/02-security-services-map.html" class="chapter-card">
       <span class="chapter-num">Chapter 02</span>
-      <h3>AWS 계정 & IAM 기본</h3>
-      <p>계정 생성, 루트 보안, MFA, IAM 사용자/그룹/정책</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>AWS 보안 서비스 전체 맵 & 위협 분석</h3>
+      <p>보안 서비스 카테고리 정리, ShopEasy 보안 취약점 분석, 적용 로드맵</p>
+      <div class="tags"><span class="tag">이론</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/03-console-cli.html" class="chapter-card">
+  </div>
+
+  <!-- 섹션 2: 계정 & 자격증명 보안 -->
+  <h2 class="section-title" id="section-iam">섹션 2: 계정 & 자격증명 보안 (IAM 심화)</h2>
+  <div class="chapter-grid">
+    <a href="chapters/03-iam-policy-deep-dive.html" class="chapter-card">
       <span class="chapter-num">Chapter 03</span>
-      <h3>AWS 관리 콘솔 & CLI</h3>
-      <p>콘솔 탐색, 리전/AZ, AWS CLI 설치 및 기본 명령어</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>IAM 정책 언어 심화</h3>
+      <p>JSON 정책 구조, 정책 평가 로직, Condition 키, 정책 시뮬레이터</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/04-ecommerce-intro.html" class="chapter-card">
+    <a href="chapters/04-iam-roles-sts.html" class="chapter-card">
       <span class="chapter-num">Chapter 04</span>
-      <h3>이커머스 서비스 소개</h3>
-      <p>실습용 쇼핑몰 프로젝트 구조, 로컬 실행, 최종 아키텍처 미리보기</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>IAM 역할 & 임시 자격증명</h3>
+      <p>IAM 역할 vs 사용자, EC2 인스턴스 프로파일, STS & AssumeRole</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/05-ec2-api-deploy.html" class="chapter-card">
+    <a href="chapters/05-permission-boundary.html" class="chapter-card">
       <span class="chapter-num">Chapter 05</span>
-      <h3>EC2 기초 & API 서버 배포</h3>
-      <p>인스턴스 타입, AMI, 키페어, 보안그룹, SSH 접속, API 서버 배포</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>권한 경계 & 최소 권한 설계</h3>
+      <p>Permission Boundary, IAM Access Analyzer, 최소 권한 원칙</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/06-ec2-frontend-deploy.html" class="chapter-card">
+    <a href="chapters/06-ecommerce-iam-lab.html" class="chapter-card">
       <span class="chapter-num">Chapter 06</span>
-      <h3>EC2에 프론트엔드 배포</h3>
-      <p>Nginx 설치, React 빌드 파일 배포, 리버스 프록시</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>이커머스 IAM 설계 실습</h3>
+      <p>인스턴스 프로파일 전환, 역할 분리, IAM 그룹 & MFA 강제</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/07-elastic-ip-cost.html" class="chapter-card">
+  </div>
+
+  <!-- 섹션 3: 네트워크 보안 -->
+  <h2 class="section-title" id="section-network">섹션 3: 네트워크 보안</h2>
+  <div class="chapter-grid">
+    <a href="chapters/07-vpc-security.html" class="chapter-card">
       <span class="chapter-num">Chapter 07</span>
-      <h3>탄력적 IP & 비용 관리</h3>
-      <p>탄력적 IP, 인스턴스 수명주기, 프리티어, 비용 탐색기</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>VPC 보안 심화</h3>
+      <p>보안그룹 체이닝, NACL 활용, VPC Flow Logs, 프라이빗 서브넷 격리</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-  </div>
-
-  <!-- 네트워킹 & 로드밸런싱 -->
-  <h2 class="section-title" id="section-network">VPC 네트워킹 & 로드밸런싱</h2>
-  <div class="chapter-grid">
-    <a href="chapters/08-vpc-basics.html" class="chapter-card">
+    <a href="chapters/08-waf.html" class="chapter-card">
       <span class="chapter-num">Chapter 08</span>
-      <h3>VPC 기초</h3>
-      <p>VPC, 서브넷, 라우팅 테이블, 인터넷 게이트웨이</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>AWS WAF</h3>
+      <p>Web ACL, 관리형 규칙, 커스텀 규칙, ALB/CloudFront WAF 연동</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/09-vpc-advanced.html" class="chapter-card">
+    <a href="chapters/09-network-security-lab.html" class="chapter-card">
       <span class="chapter-num">Chapter 09</span>
-      <h3>VPC 심화</h3>
-      <p>NAT 게이트웨이, 보안그룹 vs NACL, VPC 엔드포인트</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>이커머스 네트워크 보안 적용</h3>
+      <p>Flow Logs, NACL 관리 포트 제한, WAF 연동, Session Manager 전환</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/10-vpc-redeploy.html" class="chapter-card">
+  </div>
+
+  <!-- 섹션 4: 데이터 보호 -->
+  <h2 class="section-title" id="section-data">섹션 4: 데이터 보호</h2>
+  <div class="chapter-grid">
+    <a href="chapters/10-kms-encryption.html" class="chapter-card">
       <span class="chapter-num">Chapter 10</span>
-      <h3>이커머스를 VPC에 재배포</h3>
-      <p>퍼블릭/프라이빗 서브넷 분리, 보안그룹 체이닝, 서비스 통신 확인</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>KMS & 암호화 기초</h3>
+      <p>전송 중/저장 시 암호화, KMS, 봉투 암호화, 키 로테이션</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/11-alb.html" class="chapter-card">
+    <a href="chapters/11-s3-security.html" class="chapter-card">
       <span class="chapter-num">Chapter 11</span>
-      <h3>ALB (Application Load Balancer)</h3>
-      <p>ALB 개념, 대상 그룹, 헬스체크, 경로 기반 라우팅</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>S3 보안</h3>
+      <p>퍼블릭 액세스 차단, SSE 암호화, 액세스 포인트, Object Lock</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/12-auto-scaling.html" class="chapter-card">
+    <a href="chapters/12-rds-dynamodb-security.html" class="chapter-card">
       <span class="chapter-num">Chapter 12</span>
-      <h3>Auto Scaling</h3>
-      <p>시작 템플릿, Auto Scaling 그룹, 조정 정책, 부하 테스트</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>RDS & DynamoDB 보안</h3>
+      <p>RDS 암호화, IAM 인증, SSL/TLS 강제, DynamoDB 세분화 접근 제어</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-  </div>
-
-  <!-- 데이터베이스 & 스토리지 -->
-  <h2 class="section-title" id="section-data">데이터베이스 & 스토리지</h2>
-  <div class="chapter-grid">
-    <a href="chapters/13-rds-basics.html" class="chapter-card">
+    <a href="chapters/13-secrets-manager.html" class="chapter-card">
       <span class="chapter-num">Chapter 13</span>
-      <h3>RDS 기초</h3>
-      <p>관리형 DB, 지원 엔진, 다중 AZ, 서브넷 그룹</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>Secrets Manager & Parameter Store</h3>
+      <p>비밀번호 관리, 자동 로테이션, .env → Secrets Manager 전환</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/14-rds-integration.html" class="chapter-card">
+  </div>
+
+  <!-- 섹션 5: 애플리케이션 & 엣지 보안 -->
+  <h2 class="section-title" id="section-app">섹션 5: 애플리케이션 & 엣지 보안</h2>
+  <div class="chapter-grid">
+    <a href="chapters/14-cloudfront-security.html" class="chapter-card">
       <span class="chapter-num">Chapter 14</span>
-      <h3>API 서버 &rarr; RDS 연동</h3>
-      <p>DB 연결, 환경변수, 스키마 생성, 데이터 마이그레이션</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>CloudFront 보안</h3>
+      <p>OAC, Signed URL/Cookie, 지역 제한, HTTPS 강제</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/15-rds-operations.html" class="chapter-card">
+    <a href="chapters/15-api-gateway-security.html" class="chapter-card">
       <span class="chapter-num">Chapter 15</span>
-      <h3>RDS 운영</h3>
-      <p>스냅샷, 자동 백업, 복원, 파라미터 그룹</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>API Gateway 보안</h3>
+      <p>인증 방식 비교, 스로틀링, WAF 연동, 리소스 정책</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/16-dynamodb-reviews.html" class="chapter-card">
+    <a href="chapters/16-lambda-security.html" class="chapter-card">
       <span class="chapter-num">Chapter 16</span>
-      <h3>DynamoDB & 리뷰 시스템</h3>
-      <p>NoSQL vs RDS, 테이블 설계, 리뷰 CRUD, API 서버 연동</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>Lambda 보안</h3>
+      <p>실행 역할 최소 권한, VPC 내 Lambda, 환경변수 암호화, 동시성 제한</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/17-s3-review-photos.html" class="chapter-card">
+  </div>
+
+  <!-- 섹션 6: 탐지 & 모니터링 -->
+  <h2 class="section-title" id="section-detect">섹션 6: 탐지 & 모니터링</h2>
+  <div class="chapter-grid">
+    <a href="chapters/17-cloudtrail.html" class="chapter-card">
       <span class="chapter-num">Chapter 17</span>
-      <h3>S3 & 리뷰 사진 업로드</h3>
-      <p>S3 버킷, Pre-signed URL, CORS, 사진 업로드 전환</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>CloudTrail</h3>
+      <p>관리/데이터 이벤트, 트레일 생성, 로그 무결성, CloudTrail Lake</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-  </div>
-
-  <!-- CDN & 서버리스 -->
-  <h2 class="section-title" id="section-serverless">CDN & 서버리스</h2>
-  <div class="chapter-grid">
-    <a href="chapters/18-s3-static-hosting.html" class="chapter-card">
+    <a href="chapters/18-aws-config.html" class="chapter-card">
       <span class="chapter-num">Chapter 18</span>
-      <h3>S3 정적 호스팅 & 프론트엔드 이전</h3>
-      <p>S3 정적 웹사이트, 버킷 정책, 프론트엔드 S3 배포</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>AWS Config</h3>
+      <p>리소스 구성 변경 추적, 관리형 규칙, 적합성 팩, 비준수 대시보드</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/19-cloudfront.html" class="chapter-card">
+    <a href="chapters/19-guardduty-securityhub.html" class="chapter-card">
       <span class="chapter-num">Chapter 19</span>
-      <h3>CloudFront</h3>
-      <p>CDN 개념, 배포 생성, S3/ALB 오리진, 캐시 정책, OAC</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
-    </a>
-    <a href="chapters/20-lambda-basics.html" class="chapter-card">
-      <span class="chapter-num">Chapter 20</span>
-      <h3>Lambda 기초</h3>
-      <p>서버리스 개념, 함수 생성, 런타임, IAM 역할</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
-    </a>
-    <a href="chapters/21-lambda-image-resize.html" class="chapter-card">
-      <span class="chapter-num">Chapter 21</span>
-      <h3>S3 + Lambda 이미지 처리</h3>
-      <p>S3 이벤트 트리거, 이미지 리사이징, 썸네일 자동 생성</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
-    </a>
-    <a href="chapters/22-api-gateway-lambda.html" class="chapter-card">
-      <span class="chapter-num">Chapter 22</span>
-      <h3>API Gateway + Lambda</h3>
-      <p>REST API 생성, Lambda 통합, 스테이지, CORS</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+      <h3>GuardDuty & Security Hub</h3>
+      <p>위협 탐지, 샘플 결과 분석, 보안 점수, CIS Benchmark</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
   </div>
 
-  <!-- 메시징 & 캐싱 & 모니터링 & IaC -->
-  <h2 class="section-title" id="section-ops">메시징 & 캐싱 & 모니터링 & IaC</h2>
+  <!-- 섹션 7: 사고 대응 & 거버넌스 -->
+  <h2 class="section-title" id="section-response">섹션 7: 사고 대응 & 거버넌스</h2>
   <div class="chapter-grid">
-    <a href="chapters/23-sqs-sns.html" class="chapter-card">
-      <span class="chapter-num">Chapter 23</span>
-      <h3>SQS & SNS</h3>
-      <p>메시지 큐, SQS 표준/FIFO, SNS 토픽, 주문 비동기 처리</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+    <a href="chapters/20-incident-response.html" class="chapter-card">
+      <span class="chapter-num">Chapter 20</span>
+      <h3>보안 사고 대응 자동화</h3>
+      <p>대응 프로세스, EventBridge + Lambda, SNS 알림, 자동 격리</p>
+      <div class="tags"><span class="tag lab">실습</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/24-elasticache.html" class="chapter-card">
-      <span class="chapter-num">Chapter 24</span>
-      <h3>ElastiCache</h3>
-      <p>Redis, 세션 스토어, 상품 목록 캐싱</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+    <a href="chapters/21-organizations-scp.html" class="chapter-card">
+      <span class="chapter-num">Chapter 21</span>
+      <h3>AWS Organizations & SCP</h3>
+      <p>멀티 계정 전략, OU 구조, 서비스 제어 정책, 가드레일</p>
+      <div class="tags"><span class="tag">이론</span><span class="tag security">보안</span></div>
     </a>
-    <a href="chapters/25-cloudwatch.html" class="chapter-card">
-      <span class="chapter-num">Chapter 25</span>
-      <h3>CloudWatch</h3>
-      <p>메트릭, 로그, 경보, 대시보드, SNS 알림</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
-    </a>
-    <a href="chapters/26-cloudformation.html" class="chapter-card">
-      <span class="chapter-num">Chapter 26</span>
-      <h3>CloudFormation</h3>
-      <p>IaC 개념, YAML 템플릿, 이커머스 인프라 코드화</p>
-      <div class="tags"><span class="tag lab">실습</span></div>
+    <a href="chapters/22-security-architecture-patterns.html" class="chapter-card">
+      <span class="chapter-num">Chapter 22</span>
+      <h3>보안 아키텍처 설계 패턴</h3>
+      <p>Well-Architected 보안 필러, Before/After 아키텍처, 보안 체크리스트</p>
+      <div class="tags"><span class="tag">이론</span><span class="tag security">보안</span></div>
     </a>
   </div>
 
@@ -222,4 +213,6 @@
 
 <script src="assets/js/main.js"></script>
 </body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/ by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
 </html>

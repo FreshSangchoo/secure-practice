@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/16-lambda-security.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lambda 보안 - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li class="sidebar-section">Lambda 보안</li>
+      <li><a href="#execution-role">Lambda 실행 역할 최소 권한</a></li>
+      <li><a href="#vpc-lambda">VPC 내 Lambda</a></li>
+      <li><a href="#env-encryption">환경변수 암호화</a></li>
+      <li><a href="#function-url">Lambda 함수 URL 인증</a></li>
+      <li><a href="#concurrency">동시성 제한</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 16</span>
+      <h1>Lambda 보안</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>Lambda 실행 역할에 최소 권한 원칙을 적용할 수 있다</li>
+          <li>VPC 내에 Lambda를 배치하여 프라이빗 리소스에 안전하게 접근할 수 있다</li>
+          <li>Lambda 환경변수를 KMS로 암호화하고 코드에서 복호화할 수 있다</li>
+          <li>Lambda 함수 URL의 인증 설정을 이해하고 안전하게 구성할 수 있다</li>
+          <li>동시성 제한을 설정하여 비용 폭탄을 방지할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 1: Lambda 실행 역할 최소 권한 -->
+    <section class="content-section" id="execution-role">
+      <h2>Lambda 실행 역할 최소 권한</h2>
+
+      <div class="info-box concept">
+        <div class="info-box-title">핵심 개념: Lambda 실행 역할</div>
+        <p>모든 Lambda 함수는 <strong>실행 역할(Execution Role)</strong>이라는 IAM Role을 가집니다. Lambda가 다른 AWS 서비스(S3, DynamoDB, RDS 등)에 접근할 때 이 역할의 권한을 사용합니다. 실행 역할에 과도한 권한을 부여하면, Lambda 함수가 침해되었을 때 공격자가 AWS 리소스에 무제한으로 접근할 수 있습니다.</p>
+      </div>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 사원증과 접근 권한</div>
+        <p>회사에서 신입사원에게 모든 층, 모든 방에 접근할 수 있는 <strong>마스터 키</strong>를 주면 어떻게 될까요? 해당 사원이 필요한 곳은 자기 부서 사무실과 회의실뿐인데, 서버실, 금고, 임원실까지 들어갈 수 있게 됩니다. Lambda 실행 역할도 마찬가지입니다. <strong>해당 함수가 필요로 하는 권한만</strong> 부여해야 합니다.</p>
+      </div>
+
+      <h3>기본 역할 vs 커스텀 역할</h3>
+
+      <div class="info-box danger">
+        <div class="info-box-title">위험: 과도한 권한의 기본 역할</div>
+        <p>Lambda 함수를 콘솔에서 생성할 때 "기본 실행 역할 생성"을 선택하면 <code>AWSLambdaBasicExecutionRole</code>만 부여됩니다. 하지만 많은 개발자들이 빠른 개발을 위해 <code>AdministratorAccess</code>나 광범위한 와일드카드 정책(<code>s3:*</code>, <code>dynamodb:*</code>)을 부여합니다. <strong>이것은 매우 위험합니다.</strong></p>
+      </div>
+
+      <h3>AWSLambdaBasicExecutionRole 분석</h3>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>// AWSLambdaBasicExecutionRole - Lambda 기본 실행 역할
+// CloudWatch Logs에 로그를 기록하는 최소한의 권한만 포함
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+
+// 이 역할만으로는 S3, DynamoDB, RDS 등에 접근할 수 없습니다.
+// 필요한 권한을 추가로 부여해야 합니다.</code></pre>
+      </div>
+
+      <h3>최소 권한 정책 작성 예제</h3>
+
+      <p>ShopEasy의 주문 처리 Lambda 함수에 필요한 최소 권한을 정의해 봅시다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>// ShopEasy 주문 처리 Lambda 함수의 최소 권한 정책
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CloudWatchLogs",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:ap-northeast-2:123456789012:log-group:/aws/lambda/shopeasy-order-processor:*"
+    },
+    {
+      "Sid": "ReadOrdersFromDynamoDB",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:Query"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:ap-northeast-2:123456789012:table/ShopEasy-Orders",
+        "arn:aws:dynamodb:ap-northeast-2:123456789012:table/ShopEasy-Orders/index/*"
+      ]
+    },
+    {
+      "Sid": "WriteOrderStatus",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:UpdateItem"
+      ],
+      "Resource": "arn:aws:dynamodb:ap-northeast-2:123456789012:table/ShopEasy-Orders"
+    },
+    {
+      "Sid": "SendOrderNotification",
+      "Effect": "Allow",
+      "Action": [
+        "sns:Publish"
+      ],
+      "Resource": "arn:aws:sns:ap-northeast-2:123456789012:ShopEasy-OrderNotifications"
+    },
+    {
+      "Sid": "ReadSecrets",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": "arn:aws:secretsmanager:ap-northeast-2:123456789012:secret:shopeasy/prod/stripe-keys-*"
+    },
+    {
+      "Sid": "DecryptSecrets",
+      "Effect": "Allow",
+      "Action": [
+        "kms:Decrypt"
+      ],
+      "Resource": "arn:aws:kms:ap-northeast-2:123456789012:key/abc123-def456"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">Best Practice: 최소 권한 원칙 적용 방법</div>
+        <ul>
+          <li><strong>와일드카드(*) 사용 최소화</strong> - Resource에 구체적인 ARN을 지정합니다. <code>"Resource": "*"</code>은 가능한 피하세요.</li>
+          <li><strong>Action을 구체적으로</strong> - <code>s3:*</code> 대신 <code>s3:GetObject</code>, <code>s3:PutObject</code> 등 필요한 액션만 지정합니다.</li>
+          <li><strong>함수별 별도 역할</strong> - 모든 Lambda 함수가 같은 역할을 공유하지 않도록 합니다.</li>
+          <li><strong>IAM Access Analyzer 활용</strong> - 실제 사용된 권한을 분석하여 불필요한 권한을 제거합니다.</li>
+          <li><strong>조건(Condition) 활용</strong> - IP, VPC, 태그 등 조건을 추가하여 접근을 더 세밀하게 제어합니다.</li>
+        </ul>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>나쁜 예 (과도한 권한)</th>
+            <th>좋은 예 (최소 권한)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>"Action": "s3:*"</code></td>
+            <td><code>"Action": "s3:GetObject"</code></td>
+          </tr>
+          <tr>
+            <td><code>"Resource": "*"</code></td>
+            <td><code>"Resource": "arn:aws:s3:::shopeasy-images/*"</code></td>
+          </tr>
+          <tr>
+            <td><code>"Action": "dynamodb:*"</code></td>
+            <td><code>"Action": ["dynamodb:GetItem", "dynamodb:Query"]</code></td>
+          </tr>
+          <tr>
+            <td>모든 함수가 같은 역할 공유</td>
+            <td>함수마다 전용 역할 생성</td>
+          </tr>
+          <tr>
+            <td><code>AdministratorAccess</code> 정책 연결</td>
+            <td>커스텀 인라인 정책 작성</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: 커스텀 Lambda 실행 역할 생성</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">Step 1: 신뢰 정책(Trust Policy) 작성</div>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">json</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>// trust-policy.json - Lambda 서비스가 이 역할을 맡을 수 있도록 허용
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 2: IAM Role 생성</div>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># IAM Role 생성
+aws iam create-role \
+  --role-name "ShopEasy-OrderProcessor-LambdaRole" \
+  --assume-role-policy-document file://trust-policy.json \
+  --description "ShopEasy 주문 처리 Lambda 전용 역할"
+
+# 최소 권한 인라인 정책 추가
+aws iam put-role-policy \
+  --role-name "ShopEasy-OrderProcessor-LambdaRole" \
+  --policy-name "OrderProcessorPermissions" \
+  --policy-document file://order-processor-policy.json
+
+# Lambda 함수에 역할 연결
+aws lambda update-function-configuration \
+  --function-name "shopeasy-order-processor" \
+  --role "arn:aws:iam::123456789012:role/ShopEasy-OrderProcessor-LambdaRole"</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 3: IAM Access Analyzer로 사용되지 않는 권한 확인</div>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 30일 동안 사용된 권한을 분석하여 최소 권한 정책 생성
+aws accessanalyzer start-policy-generation \
+  --policy-generation-details '{
+    "principalArn": "arn:aws:iam::123456789012:role/ShopEasy-OrderProcessor-LambdaRole"
+  }' \
+  --cloud-trail-details '{
+    "trailArn": "arn:aws:cloudtrail:ap-northeast-2:123456789012:trail/management-trail",
+    "startTime": "2024-01-01T00:00:00Z",
+    "endTime": "2024-01-31T00:00:00Z"
+  }'
+
+# 생성된 정책 확인
+aws accessanalyzer get-generated-policy \
+  --job-id "JOB_ID"</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 2: VPC 내 Lambda -->
+    <section class="content-section" id="vpc-lambda">
+      <h2>VPC 내 Lambda</h2>
+
+      <div class="info-box concept">
+        <div class="info-box-title">핵심 개념: Lambda를 VPC에 배치하는 이유</div>
+        <p>기본적으로 Lambda 함수는 AWS 관리형 VPC에서 실행되며, 인터넷에 접근할 수 있지만 <strong>고객의 VPC 내 프라이빗 리소스</strong>(RDS, ElastiCache, EC2 등)에는 접근할 수 없습니다. Lambda를 VPC에 배치하면 프라이빗 서브넷의 리소스에 안전하게 접근할 수 있습니다.</p>
+      </div>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 사내 네트워크 접속</div>
+        <p>회사 밖(인터넷)에서는 내부 서버에 접근할 수 없습니다. 내부 서버에 접근하려면 <strong>사내 네트워크에 연결</strong>해야 합니다(VPN 또는 사무실 출근). Lambda를 VPC에 배치하는 것은 마치 Lambda를 "사무실로 출근"시키는 것과 같습니다. 사내 네트워크(VPC)에 연결되어 내부 서버(RDS, ElastiCache)에 접근할 수 있게 됩니다.</p>
+      </div>
+
+      <h3>ENI(Elastic Network Interface) 사용</h3>
+
+      <p>Lambda를 VPC에 배치하면, AWS가 지정된 서브넷에 <strong>ENI(탄력적 네트워크 인터페이스)</strong>를 생성합니다. Lambda는 이 ENI를 통해 VPC 내부 리소스와 통신합니다.</p>
+
+      <div class="info-box tip">
+        <div class="info-box-title">팁: Hyperplane ENI (2019년 이후 개선)</div>
+        <p>과거에는 Lambda가 VPC에 배치될 때마다 ENI를 새로 생성해서 콜드 스타트가 10초 이상 걸렸습니다. 2019년에 AWS가 <strong>Hyperplane ENI</strong>를 도입하면서, 같은 보안 그룹과 서브넷을 사용하는 Lambda 함수들이 ENI를 공유합니다. 이제 VPC Lambda의 콜드 스타트 지연은 크게 줄었습니다.</p>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">VPC 내 Lambda 아키텍처</div>
+        <div class="diagram-row">
+          <div class="diagram-box user">
+            <strong>인터넷</strong>
+            <p>사용자 요청</p>
+          </div>
+          <div class="arrow">&rarr;</div>
+          <div class="diagram-box security">
+            <strong>API Gateway</strong>
+            <p>API 요청 수신</p>
+          </div>
+          <div class="arrow">&rarr;</div>
+          <div class="diagram-box serverless">
+            <strong>Lambda</strong>
+            <p>프라이빗 서브넷</p>
+            <p>ENI로 VPC 연결</p>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box serverless">
+            <strong>Lambda (VPC 내)</strong>
+            <p>프라이빗 서브넷</p>
+          </div>
+          <div class="arrow">&rarr;</div>
+          <div class="diagram-box database">
+            <strong>RDS / ElastiCache</strong>
+            <p>프라이빗 서브넷</p>
+            <p>보안 그룹으로 제한</p>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box serverless">
+            <strong>Lambda (VPC 내)</strong>
+            <p>인터넷 접근 필요 시</p>
+          </div>
+          <div class="arrow">&rarr;</div>
+          <div class="diagram-box network">
+            <strong>NAT Gateway</strong>
+            <p>퍼블릭 서브넷</p>
+          </div>
+          <div class="arrow">&rarr;</div>
+          <div class="diagram-box user">
+            <strong>인터넷</strong>
+            <p>외부 API 호출</p>
+          </div>
+        </div>
+      </div>
+
+      <h3>프라이빗 서브넷의 RDS/ElastiCache 접근</h3>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># Lambda를 VPC에 배치
+aws lambda update-function-configuration \
+  --function-name "shopeasy-order-processor" \
+  --vpc-config '{
+    "SubnetIds": [
+      "subnet-0abc123def456priv1",
+      "subnet-0abc123def456priv2"
+    ],
+    "SecurityGroupIds": [
+      "sg-0lambda123security"
+    ]
+  }'
+
+# Lambda 실행 역할에 VPC 관련 권한 추가 필요
+# AWSLambdaVPCAccessExecutionRole 관리형 정책 연결
+aws iam attach-role-policy \
+  --role-name "ShopEasy-OrderProcessor-LambdaRole" \
+  --policy-arn "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"</code></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>// AWSLambdaVPCAccessExecutionRole 정책 내용
+// ENI 생성/삭제/조회 권한이 포함됩니다
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "ec2:CreateNetworkInterface",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DeleteNetworkInterface",
+        "ec2:AssignPrivateIpAddresses",
+        "ec2:UnassignPrivateIpAddresses"
+      ],
+      "Resource": "*"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>보안 그룹 설정</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>보안 그룹</th>
+            <th>인바운드</th>
+            <th>아웃바운드</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Lambda SG</strong></td>
+            <td>없음 (Lambda는 인바운드 불필요)</td>
+            <td>RDS SG의 3306 포트 허용<br>ElastiCache SG의 6379 포트 허용</td>
+          </tr>
+          <tr>
+            <td><strong>RDS SG</strong></td>
+            <td>Lambda SG에서 3306 포트 허용</td>
+            <td>해당 없음</td>
+          </tr>
+          <tr>
+            <td><strong>ElastiCache SG</strong></td>
+            <td>Lambda SG에서 6379 포트 허용</td>
+            <td>해당 없음</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>NAT Gateway 필요 (인터넷 접근 시)</h3>
+
+      <div class="info-box warning">
+        <div class="info-box-title">주의: VPC Lambda의 인터넷 접근</div>
+        <p>Lambda를 VPC의 <strong>프라이빗 서브넷</strong>에 배치하면 <strong>인터넷에 직접 접근할 수 없습니다</strong>. 외부 API(Stripe 결제, SendGrid 이메일 등)를 호출해야 한다면 NAT Gateway가 필요합니다. 하지만 AWS 서비스(S3, DynamoDB, Secrets Manager 등)에 대해서는 <strong>VPC 엔드포인트</strong>를 사용하면 NAT Gateway 없이도 접근할 수 있어 비용을 절감할 수 있습니다.</p>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>접근 대상</th>
+            <th>방법</th>
+            <th>비용</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>VPC 내 RDS/ElastiCache</td>
+            <td>VPC 내부 통신 (ENI)</td>
+            <td>무료</td>
+          </tr>
+          <tr>
+            <td>S3, DynamoDB</td>
+            <td><strong>Gateway VPC 엔드포인트 (권장)</strong></td>
+            <td><strong>무료</strong></td>
+          </tr>
+          <tr>
+            <td>Secrets Manager, SSM, SQS 등</td>
+            <td><strong>Interface VPC 엔드포인트</strong></td>
+            <td>시간당 + 데이터 처리 비용</td>
+          </tr>
+          <tr>
+            <td>외부 API (Stripe, SendGrid 등)</td>
+            <td>NAT Gateway</td>
+            <td>시간당 + 데이터 처리 비용</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># VPC 엔드포인트 생성 - Secrets Manager (Interface type)
+aws ec2 create-vpc-endpoint \
+  --vpc-id vpc-0abc123 \
+  --service-name com.amazonaws.ap-northeast-2.secretsmanager \
+  --vpc-endpoint-type Interface \
+  --subnet-ids subnet-0priv1 subnet-0priv2 \
+  --security-group-ids sg-0vpce123 \
+  --private-dns-enabled
+
+# VPC 엔드포인트 생성 - S3 (Gateway type, 무료!)
+aws ec2 create-vpc-endpoint \
+  --vpc-id vpc-0abc123 \
+  --service-name com.amazonaws.ap-northeast-2.s3 \
+  --vpc-endpoint-type Gateway \
+  --route-table-ids rtb-0private123
+
+# VPC 엔드포인트 생성 - DynamoDB (Gateway type, 무료!)
+aws ec2 create-vpc-endpoint \
+  --vpc-id vpc-0abc123 \
+  --service-name com.amazonaws.ap-northeast-2.dynamodb \
+  --vpc-endpoint-type Gateway \
+  --route-table-ids rtb-0private123</code></pre>
+      </div>
+    </section>
+
+    <!-- Section 3: 환경변수 암호화 -->
+    <section class="content-section" id="env-encryption">
+      <h2>환경변수 암호화</h2>
+
+      <div class="info-box concept">
+        <div class="info-box-title">핵심 개념: Lambda 환경변수 암호화</div>
+        <p>Lambda 환경변수는 기본적으로 <strong>저장 시(at rest)</strong> AWS 관리형 키로 암호화됩니다. 하지만 콘솔이나 API를 통해 환경변수를 조회하면 <strong>평문으로 표시</strong>됩니다. 더 높은 보안이 필요하면 KMS CMK(Customer Managed Key)로 <strong>전송 시(in transit)</strong> 추가 암호화를 적용할 수 있습니다.</p>
+      </div>
+
+      <h3>Lambda 환경변수 기본 암호화 (저장 시)</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>암호화 유형</th>
+            <th>기본 암호화 (저장 시)</th>
+            <th>추가 암호화 (전송 시)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>암호화 키</td>
+            <td>AWS 관리형 키 (aws/lambda)</td>
+            <td><strong>고객 관리형 CMK</strong></td>
+          </tr>
+          <tr>
+            <td>암호화 시점</td>
+            <td>배포 시 자동 암호화</td>
+            <td>배포 전 클라이언트 측 암호화</td>
+          </tr>
+          <tr>
+            <td>콘솔 표시</td>
+            <td>평문으로 표시 (IAM 권한 있으면 볼 수 있음)</td>
+            <td><strong>암호문으로 표시</strong></td>
+          </tr>
+          <tr>
+            <td>비용</td>
+            <td>무료</td>
+            <td>CMK 비용 ($1/월) + API 호출 비용</td>
+          </tr>
+          <tr>
+            <td>적합한 데이터</td>
+            <td>일반적인 설정값</td>
+            <td>매우 민감한 비밀번호, 키</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>KMS를 사용한 추가 암호화 (전송 시)</h3>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 1. CMK 생성 (또는 기존 키 사용)
+aws kms create-key \
+  --description "ShopEasy Lambda 환경변수 암호화 키" \
+  --tags '[{"TagKey":"Project","TagValue":"ShopEasy"}]'
+
+aws kms create-alias \
+  --alias-name "alias/shopeasy-lambda-env" \
+  --target-key-id "key-id-from-above"
+
+# 2. 환경변수 값을 미리 암호화
+ENCRYPTED_DB_PASSWORD=$(aws kms encrypt \
+  --key-id "alias/shopeasy-lambda-env" \
+  --plaintext "SuperSecret123!" \
+  --output text \
+  --query CiphertextBlob)
+
+echo "Encrypted: $ENCRYPTED_DB_PASSWORD"
+
+# 3. Lambda 함수에 암호화된 환경변수 설정
+aws lambda update-function-configuration \
+  --function-name "shopeasy-order-processor" \
+  --environment '{
+    "Variables": {
+      "DB_PASSWORD_ENCRYPTED": "'"$ENCRYPTED_DB_PASSWORD"'",
+      "DB_HOST": "shopeasy-db.abc123.rds.amazonaws.com",
+      "DB_NAME": "shopeasy"
+    }
+  }' \
+  --kms-key-arn "arn:aws:kms:ap-northeast-2:123456789012:key/key-id"</code></pre>
+      </div>
+
+      <h3>코드에서 복호화하는 방법</h3>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">javascript</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>// Node.js - Lambda에서 KMS로 환경변수 복호화
+const { KMSClient, DecryptCommand } = require('@aws-sdk/client-kms');
+
+const kmsClient = new KMSClient({ region: 'ap-northeast-2' });
+
+// 복호화된 값을 캐싱 (콜드 스타트 시 한 번만 복호화)
+let decryptedPassword = null;
+
+async function decryptEnvVar(encrypted) {
+  const command = new DecryptCommand({
+    CiphertextBlob: Buffer.from(encrypted, 'base64')
+  });
+
+  const response = await kmsClient.send(command);
+  return new TextDecoder().decode(response.Plaintext);
+}
+
+exports.handler = async (event) => {
+  // 콜드 스타트 시에만 복호화 (캐싱)
+  if (!decryptedPassword) {
+    decryptedPassword = await decryptEnvVar(
+      process.env.DB_PASSWORD_ENCRYPTED
+    );
+    console.log('환경변수 복호화 완료');
+  }
+
+  // DB 연결
+  const connection = await mysql.createConnection({
+    host: process.env.DB_HOST,
+    database: process.env.DB_NAME,
+    user: 'admin',
+    password: decryptedPassword  // 복호화된 비밀번호 사용
+  });
+
+  // 비즈니스 로직 실행
+  const [rows] = await connection.execute('SELECT * FROM orders WHERE id = ?', [event.orderId]);
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify(rows[0])
+  };
+};</code></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">python</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># Python - Lambda에서 KMS로 환경변수 복호화
+import os
+import json
+import base64
+import boto3
+
+kms_client = boto3.client('kms', region_name='ap-northeast-2')
+
+# 모듈 레벨에서 복호화 (콜드 스타트 시 한 번만 실행)
+ENCRYPTED_PASSWORD = os.environ.get('DB_PASSWORD_ENCRYPTED')
+DECRYPTED_PASSWORD = None
+
+def decrypt_env_var(encrypted_value):
+    """KMS로 암호화된 환경변수를 복호화합니다."""
+    response = kms_client.decrypt(
+        CiphertextBlob=base64.b64decode(encrypted_value)
+    )
+    return response['Plaintext'].decode('utf-8')
+
+def lambda_handler(event, context):
+    global DECRYPTED_PASSWORD
+
+    # 콜드 스타트 시에만 복호화
+    if DECRYPTED_PASSWORD is None:
+        DECRYPTED_PASSWORD = decrypt_env_var(ENCRYPTED_PASSWORD)
+        print('환경변수 복호화 완료')
+
+    # DB 연결
+    import pymysql
+    connection = pymysql.connect(
+        host=os.environ['DB_HOST'],
+        database=os.environ['DB_NAME'],
+        user='admin',
+        password=DECRYPTED_PASSWORD
+    )
+
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT * FROM orders WHERE id = %s', (event['orderId'],))
+        result = cursor.fetchone()
+
+    return {
+        'statusCode': 200,
+        'body': json.dumps(result, default=str)
+    }</code></pre>
+      </div>
+
+      <h3>Secrets Manager와의 조합</h3>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">Best Practice: 환경변수 암호화 vs Secrets Manager</div>
+        <table>
+          <thead>
+            <tr>
+              <th>방법</th>
+              <th>장점</th>
+              <th>단점</th>
+              <th>적합한 경우</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>KMS 환경변수 암호화</td>
+              <td>간단한 구현, API 호출 최소화</td>
+              <td>자동 로테이션 불가, 코드 배포 시 갱신</td>
+              <td>자주 변경되지 않는 설정</td>
+            </tr>
+            <tr>
+              <td>Secrets Manager</td>
+              <td>자동 로테이션, 중앙 관리, 감사</td>
+              <td>API 호출 필요, 약간의 지연</td>
+              <td><strong>DB 비밀번호, 외부 API 키 (권장)</strong></td>
+            </tr>
+            <tr>
+              <td>혼합 사용</td>
+              <td>보안과 성능 균형</td>
+              <td>복잡도 증가</td>
+              <td>대규모 운영 환경</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>결론: 운영 환경에서는 <strong>Secrets Manager를 사용하는 것이 권장</strong>됩니다. KMS 환경변수 암호화는 Secrets Manager를 사용할 수 없는 특수한 경우에만 사용하세요.</p>
+      </div>
+    </section>
+
+    <!-- Section 4: Lambda 함수 URL 인증 -->
+    <section class="content-section" id="function-url">
+      <h2>Lambda 함수 URL 인증</h2>
+
+      <div class="info-box concept">
+        <div class="info-box-title">핵심 개념: Lambda 함수 URL</div>
+        <p>Lambda 함수 URL은 Lambda 함수에 <strong>전용 HTTPS 엔드포인트</strong>를 부여하는 기능입니다. API Gateway 없이도 HTTP 요청으로 Lambda를 직접 호출할 수 있습니다. 간단한 웹훅(Webhook), 단일 함수 API 등에 유용하지만, <strong>인증 설정을 반드시 확인</strong>해야 합니다.</p>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># Lambda 함수 URL 생성
+aws lambda create-function-url-config \
+  --function-name "shopeasy-webhook" \
+  --auth-type AWS_IAM   # 또는 NONE
+
+# 생성된 URL 확인
+aws lambda get-function-url-config \
+  --function-name "shopeasy-webhook"
+
+# 결과:
+# {
+#   "FunctionUrl": "https://abc123xyz.lambda-url.ap-northeast-2.on.aws/",
+#   "AuthType": "AWS_IAM"
+# }</code></pre>
+      </div>
+
+      <h3>IAM 인증 vs NONE</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>인증 유형</th>
+            <th>설명</th>
+            <th>사용 사례</th>
+            <th>보안 수준</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>AWS_IAM</strong></td>
+            <td>IAM 자격 증명(SigV4)으로 요청에 서명해야 함</td>
+            <td>AWS 서비스 간 호출, 인증된 사용자만 접근</td>
+            <td><strong>높음</strong></td>
+          </tr>
+          <tr>
+            <td><strong>NONE</strong></td>
+            <td>인증 없이 누구나 호출 가능</td>
+            <td>공개 API, 웹훅 (함수 내부에서 검증 필요)</td>
+            <td><strong>낮음 (주의!)</strong></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box danger">
+        <div class="info-box-title">위험: AuthType NONE의 위험성</div>
+        <p><code>AuthType: NONE</code>으로 설정하면 <strong>인터넷의 누구나</strong> Lambda 함수를 호출할 수 있습니다. 이는 다음과 같은 문제를 초래합니다:</p>
+        <ul>
+          <li><strong>비용 폭탄</strong> - 악의적인 사용자가 대량의 요청을 보내면 Lambda 실행 비용이 급증합니다</li>
+          <li><strong>데이터 유출</strong> - 함수가 DB에서 데이터를 조회하는 경우 인증 없이 데이터에 접근할 수 있습니다</li>
+          <li><strong>리소스 남용</strong> - DDoS 공격의 대상이 될 수 있습니다</li>
+          <li><strong>보안 침해</strong> - 함수가 다른 AWS 리소스에 접근하는 권한을 가진 경우, 간접적으로 AWS 리소스가 침해될 수 있습니다</li>
+        </ul>
+      </div>
+
+      <h3>CORS 설정</h3>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 함수 URL에 CORS 설정 추가
+aws lambda update-function-url-config \
+  --function-name "shopeasy-webhook" \
+  --auth-type AWS_IAM \
+  --cors '{
+    "AllowOrigins": ["https://shopeasy.example.com"],
+    "AllowMethods": ["GET", "POST"],
+    "AllowHeaders": ["Content-Type", "Authorization"],
+    "MaxAge": 86400
+  }'</code></pre>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">주의: CORS는 보안이 아닙니다!</div>
+        <p>CORS(Cross-Origin Resource Sharing)는 <strong>브라우저</strong>에서만 적용되는 제한입니다. curl, Postman, 또는 서버 측 코드에서는 CORS 제한이 무시됩니다. CORS를 설정했다고 해서 API가 안전한 것은 아닙니다. <strong>반드시 적절한 인증(AWS_IAM)을 사용하세요.</strong></p>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">Best Practice: Lambda 함수 URL 보안 가이드</div>
+        <ul>
+          <li><strong>가능한 AWS_IAM 인증 사용</strong> - 인증 없이 열어두는 것은 최후의 수단입니다</li>
+          <li><strong>NONE 사용 시</strong> - 반드시 함수 코드 내에서 자체 인증 로직(API 키 확인, HMAC 서명 검증 등)을 구현하세요</li>
+          <li><strong>동시성 제한</strong> - AuthType NONE인 함수에는 반드시 Reserved Concurrency를 설정하세요</li>
+          <li><strong>모니터링 필수</strong> - CloudWatch 알람으로 비정상 호출 패턴을 감지하세요</li>
+          <li><strong>API Gateway 대안 검토</strong> - 복잡한 인증, WAF, 사용량 제한이 필요하면 API Gateway를 사용하세요</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Section 5: 동시성 제한 -->
+    <section class="content-section" id="concurrency">
+      <h2>동시성 제한</h2>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 수도꼭지의 최대 개방 제한</div>
+        <p>아파트의 수도를 생각해보세요. 모든 집에서 동시에 수도꼭지를 최대로 틀면 수압이 떨어지고 물 요금이 폭증합니다. 아파트 관리사무소는 세대별 <strong>최대 수도 사용량을 제한</strong>하여 전체 수압을 유지하고 비용을 관리합니다.</p>
+        <p>Lambda의 동시성 제한도 같습니다. 함수별로 동시에 실행할 수 있는 최대 인스턴스 수를 제한하여, 한 함수가 전체 계정의 동시성 한도를 독점하거나 비용이 폭증하는 것을 방지합니다.</p>
+      </div>
+
+      <div class="info-box concept">
+        <div class="info-box-title">핵심 개념: Lambda 동시성</div>
+        <p>Lambda 동시성(Concurrency)은 <strong>특정 시점에 동시에 실행 중인 함수 인스턴스의 수</strong>입니다. AWS 계정의 기본 동시성 한도는 리전당 <strong>1,000</strong>입니다. 한 함수가 1,000개를 모두 사용하면 다른 함수들이 스로틀됩니다.</p>
+      </div>
+
+      <h3>예약 동시성 (Reserved Concurrency)</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>특성</th>
+            <th>예약 동시성 (Reserved)</th>
+            <th>프로비저닝된 동시성 (Provisioned)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>목적</td>
+            <td><strong>최대 동시성 제한</strong> (상한선)</td>
+            <td><strong>최소 동시성 보장</strong> (하한선)</td>
+          </tr>
+          <tr>
+            <td>콜드 스타트</td>
+            <td>발생함</td>
+            <td><strong>제거됨</strong> (항상 준비 상태)</td>
+          </tr>
+          <tr>
+            <td>비용</td>
+            <td><strong>무료</strong></td>
+            <td>유료 (항상 실행 중인 인스턴스 비용)</td>
+          </tr>
+          <tr>
+            <td>초과 시 동작</td>
+            <td>스로틀 (429 에러)</td>
+            <td>설정 수 초과분은 일반 동시성 사용</td>
+          </tr>
+          <tr>
+            <td>보안 효과</td>
+            <td><strong>비용 폭탄 방지, 리소스 격리</strong></td>
+            <td>일관된 응답 시간 보장</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 예약 동시성 설정 (최대 100개 인스턴스로 제한)
+aws lambda put-function-concurrency \
+  --function-name "shopeasy-order-processor" \
+  --reserved-concurrent-executions 100
+
+# 예약 동시성 확인
+aws lambda get-function-concurrency \
+  --function-name "shopeasy-order-processor"
+
+# 예약 동시성 제거 (무제한으로 복원)
+aws lambda delete-function-concurrency \
+  --function-name "shopeasy-order-processor"
+
+# 프로비저닝된 동시성 설정
+aws lambda put-provisioned-concurrency-config \
+  --function-name "shopeasy-order-processor" \
+  --qualifier "prod" \
+  --provisioned-concurrent-executions 20</code></pre>
+      </div>
+
+      <h3>비용 폭탄 방지를 위한 제한 설정</h3>
+
+      <div class="info-box danger">
+        <div class="info-box-title">실제 사례: Lambda 비용 폭탄</div>
+        <p>한 개발자가 Lambda 함수에 무한 루프 버그를 배포했습니다. 함수가 자기 자신을 다시 호출하는 재귀 호출이 발생하여, <strong>수 분 만에 1,000개의 동시 실행</strong>에 도달했고, 한 시간 동안 <strong>수천 달러의 비용</strong>이 발생했습니다. 예약 동시성이 설정되어 있었다면 피할 수 있었습니다.</p>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">ShopEasy Lambda 동시성 설계</div>
+        <div class="diagram-row">
+          <div class="diagram-box compute">
+            <strong>계정 총 한도</strong>
+            <p>1,000 동시 실행</p>
+            <p>리전: ap-northeast-2</p>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box serverless">
+            <strong>주문 처리</strong>
+            <p>Reserved: 200</p>
+            <p>핵심 비즈니스</p>
+          </div>
+          <div class="diagram-box serverless">
+            <strong>이미지 리사이즈</strong>
+            <p>Reserved: 100</p>
+            <p>S3 트리거</p>
+          </div>
+          <div class="diagram-box serverless">
+            <strong>검색 API</strong>
+            <p>Reserved: 50</p>
+            <p>API Gateway</p>
+          </div>
+          <div class="diagram-box serverless">
+            <strong>알림 발송</strong>
+            <p>Reserved: 30</p>
+            <p>SQS 트리거</p>
+          </div>
+          <div class="diagram-box monitor">
+            <strong>미예약 풀</strong>
+            <p>620 (나머지)</p>
+            <p>다른 함수 공유</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">팁: Reserved Concurrency = 0으로 설정하면?</div>
+        <p>예약 동시성을 <strong>0으로 설정하면 함수가 완전히 비활성화</strong>됩니다. 어떤 호출도 처리하지 않습니다. 이것은 긴급 상황에서 함수를 즉시 중지하는 "킬 스위치(Kill Switch)"로 사용할 수 있습니다. 예를 들어 보안 사고 발생 시 침해된 함수를 즉시 중지할 수 있습니다.</p>
+      </div>
+
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: 동시성 제한 설정</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">Step 1: 현재 계정의 동시성 한도 확인</div>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 계정 설정 확인
+aws lambda get-account-settings
+
+# 출력 예시:
+# {
+#   "AccountLimit": {
+#     "TotalCodeSize": 80530636800,
+#     "CodeSizeUnzipped": 262144000,
+#     "CodeSizeZipped": 52428800,
+#     "ConcurrentExecutions": 1000,         # 계정 총 한도
+#     "UnreservedConcurrentExecutions": 900  # 미예약 동시성
+#   },
+#   "AccountUsage": {
+#     "TotalCodeSize": 15000000,
+#     "FunctionCount": 12
+#   }
+# }</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 2: 예약 동시성 설정</div>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># ShopEasy 주문 처리 함수에 예약 동시성 100 설정
+aws lambda put-function-concurrency \
+  --function-name "shopeasy-order-processor" \
+  --reserved-concurrent-executions 100
+
+echo "주문 처리 함수: 최대 100개 동시 실행으로 제한됨"
+
+# ShopEasy 이미지 리사이즈 함수에 예약 동시성 50 설정
+aws lambda put-function-concurrency \
+  --function-name "shopeasy-image-resize" \
+  --reserved-concurrent-executions 50
+
+echo "이미지 리사이즈 함수: 최대 50개 동시 실행으로 제한됨"</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 3: 스로틀링 테스트</div>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 동시에 많은 요청을 보내 스로틀링 확인
+# (테스트 Lambda 함수 - 5초 대기)
+for i in $(seq 1 200); do
+  aws lambda invoke \
+    --function-name "shopeasy-order-processor" \
+    --invocation-type Event \
+    --payload '{"test": true}' \
+    /dev/null &
+done
+
+# 잠시 후 CloudWatch 메트릭 확인
+aws cloudwatch get-metric-statistics \
+  --namespace "AWS/Lambda" \
+  --metric-name "Throttles" \
+  --dimensions Name=FunctionName,Value=shopeasy-order-processor \
+  --start-time "$(date -u -v-1H '+%Y-%m-%dT%H:%M:%S')" \
+  --end-time "$(date -u '+%Y-%m-%dT%H:%M:%S')" \
+  --period 60 \
+  --statistics Sum</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 4: CloudWatch 알람 설정</div>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 스로틀이 발생하면 알림을 보내는 CloudWatch 알람
+aws cloudwatch put-metric-alarm \
+  --alarm-name "ShopEasy-Lambda-Throttles" \
+  --alarm-description "Lambda 스로틀 발생 감지" \
+  --namespace "AWS/Lambda" \
+  --metric-name "Throttles" \
+  --dimensions Name=FunctionName,Value=shopeasy-order-processor \
+  --statistic Sum \
+  --period 300 \
+  --threshold 10 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 1 \
+  --alarm-actions "arn:aws:sns:ap-northeast-2:123456789012:ShopEasy-Alerts"
+
+# 비용 알람도 설정 (Lambda 비용이 임계값 초과 시)
+aws cloudwatch put-metric-alarm \
+  --alarm-name "ShopEasy-Lambda-CostAlert" \
+  --alarm-description "Lambda 비용 이상 감지" \
+  --namespace "AWS/Lambda" \
+  --metric-name "ConcurrentExecutions" \
+  --statistic Maximum \
+  --period 60 \
+  --threshold 80 \
+  --comparison-operator GreaterThanThreshold \
+  --evaluation-periods 3 \
+  --alarm-actions "arn:aws:sns:ap-northeast-2:123456789012:ShopEasy-Alerts"</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">Best Practice: ShopEasy Lambda 보안 종합 체크리스트</div>
+        <table>
+          <thead>
+            <tr>
+              <th>보안 영역</th>
+              <th>적용 사항</th>
+              <th>확인</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>실행 역할</td>
+              <td>함수별 전용 역할, 최소 권한 정책</td>
+              <td>IAM Access Analyzer로 검증</td>
+            </tr>
+            <tr>
+              <td>네트워크</td>
+              <td>VPC 내 배치 (RDS/ElastiCache 접근)</td>
+              <td>보안 그룹, VPC 엔드포인트 설정</td>
+            </tr>
+            <tr>
+              <td>환경변수</td>
+              <td>Secrets Manager 사용 또는 KMS 암호화</td>
+              <td>평문 비밀번호 없음 확인</td>
+            </tr>
+            <tr>
+              <td>함수 URL</td>
+              <td>AWS_IAM 인증 (NONE 사용 시 자체 검증)</td>
+              <td>공개 엔드포인트 목록 확인</td>
+            </tr>
+            <tr>
+              <td>동시성</td>
+              <td>모든 함수에 예약 동시성 설정</td>
+              <td>비용 알람 설정</td>
+            </tr>
+            <tr>
+              <td>런타임</td>
+              <td>최신 런타임 버전 사용</td>
+              <td>EOL 런타임 없음 확인</td>
+            </tr>
+            <tr>
+              <td>코드 서명</td>
+              <td>Code Signing 설정 (선택)</td>
+              <td>신뢰할 수 있는 코드만 배포</td>
+            </tr>
+            <tr>
+              <td>로깅</td>
+              <td>CloudWatch Logs 활성화</td>
+              <td>비밀번호 로그 출력 없음 확인</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="chapter-nav">
+      <a href="15-api-gateway-security.html" class="prev">이전: API Gateway 보안</a>
+      <a href="17-cloudtrail.html" class="next">다음: CloudTrail</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/16-lambda-security.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>

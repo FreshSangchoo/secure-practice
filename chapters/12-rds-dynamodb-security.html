@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/12-rds-dynamodb-security.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RDS & DynamoDB 보안 - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li class="sidebar-section">RDS & DynamoDB 보안</li>
+      <li><a href="#db-security-importance">DB 보안의 중요성</a></li>
+      <li><a href="#rds-encryption">RDS 저장 시 암호화</a></li>
+      <li><a href="#rds-iam-auth">RDS IAM 인증</a></li>
+      <li><a href="#rds-ssl-tls">RDS SSL/TLS 강제</a></li>
+      <li><a href="#rds-best-practices">RDS 보안 베스트 프랙티스</a></li>
+      <li><a href="#dynamodb-encryption">DynamoDB 암호화</a></li>
+      <li><a href="#dynamodb-fine-grained">DynamoDB 세분화 접근 제어</a></li>
+      <li><a href="#lab-rds-iam">실습: RDS IAM 인증</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 12</span>
+      <h1>RDS & DynamoDB 보안</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>이커머스 데이터베이스에서 보호해야 할 민감 데이터를 식별할 수 있다</li>
+          <li>RDS 저장 시 암호화를 설정하고 기존 DB를 암호화된 DB로 전환할 수 있다</li>
+          <li>RDS IAM 인증을 설정하여 비밀번호 없이 데이터베이스에 접속할 수 있다</li>
+          <li>RDS SSL/TLS 연결을 강제하여 전송 중 암호화를 적용할 수 있다</li>
+          <li>DynamoDB의 암호화 옵션과 세분화된 접근 제어(Fine-grained access control)를 구현할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 섹션 1: DB 보안의 중요성 -->
+    <section class="content-section" id="db-security-importance">
+      <h2>1. 데이터베이스 보안의 중요성</h2>
+
+      <p>
+        데이터베이스는 이커머스 서비스의 <strong>핵심 자산</strong>입니다.
+        고객 개인정보, 결제 내역, 주문 정보 등 가장 민감한 데이터가 저장되어 있어
+        공격자의 주요 타겟이 됩니다. ShopEasy의 MySQL RDS에는 다음과 같은 데이터가 저장되어 있습니다.
+      </p>
+
+      <h3>ShopEasy 데이터베이스의 민감 데이터</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>테이블</th>
+            <th>민감 데이터</th>
+            <th>위험도</th>
+            <th>유출 시 영향</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>users</code></td>
+            <td>이메일, 전화번호, 비밀번호 해시</td>
+            <td style="color: var(--danger); font-weight: 700;">매우 높음</td>
+            <td>계정 탈취, 피싱, 개인정보보호법 위반</td>
+          </tr>
+          <tr>
+            <td><code>orders</code></td>
+            <td>주문 내역, 배송 주소</td>
+            <td style="color: var(--danger); font-weight: 700;">높음</td>
+            <td>개인 구매 이력 노출, 주소 유출</td>
+          </tr>
+          <tr>
+            <td><code>payments</code></td>
+            <td>결제 금액, 결제 수단 정보</td>
+            <td style="color: var(--danger); font-weight: 700;">매우 높음</td>
+            <td>금융 사기, PCI-DSS 위반, 과징금</td>
+          </tr>
+          <tr>
+            <td><code>products</code></td>
+            <td>상품명, 가격, 재고</td>
+            <td style="color: var(--success);">낮음</td>
+            <td>경쟁사 가격 정보 노출</td>
+          </tr>
+          <tr>
+            <td><code>reviews</code></td>
+            <td>리뷰 내용, 평점</td>
+            <td style="color: var(--success);">낮음</td>
+            <td>공개 데이터이므로 영향 적음</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="diagram">
+        <div class="diagram-title">ShopEasy 데이터베이스 보안 위협 경로</div>
+        <div class="diagram-row">
+          <div class="diagram-box user">
+            <div class="box-title">공격자</div>
+            <div class="box-sub">외부 위협</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-col">
+            <div class="diagram-box security">
+              <div class="box-title">SQL Injection</div>
+              <div class="box-sub">애플리케이션 취약점</div>
+            </div>
+            <div class="diagram-box security">
+              <div class="box-title">자격증명 탈취</div>
+              <div class="box-sub">.env 파일 유출</div>
+            </div>
+            <div class="diagram-box security">
+              <div class="box-title">네트워크 도청</div>
+              <div class="box-sub">비암호화 연결</div>
+            </div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box database">
+            <div class="box-title">RDS (MySQL)</div>
+            <div class="box-sub">고객 정보, 결제 내역</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box danger">
+        <div class="info-box-title">ShopEasy 현재 DB 보안 취약점</div>
+        <ul>
+          <li><strong>비밀번호 기반 인증</strong>: .env 파일에 DB 비밀번호가 평문으로 저장되어 유출 위험</li>
+          <li><strong>저장 시 암호화 미적용</strong>: RDS 인스턴스 생성 시 암호화를 설정하지 않았을 수 있음</li>
+          <li><strong>SSL/TLS 미강제</strong>: EC2와 RDS 간 통신이 암호화되지 않을 수 있음</li>
+          <li><strong>스냅샷 미암호화</strong>: DB 스냅샷이 암호화 없이 저장되어 복사/공유 시 데이터 노출 위험</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 섹션 2: RDS 저장 시 암호화 -->
+    <section class="content-section" id="rds-encryption">
+      <h2>2. RDS 저장 시 암호화</h2>
+
+      <p>
+        RDS 저장 시 암호화는 데이터베이스의 스토리지, 자동 백업, 스냅샷, 읽기 전용 복제본을
+        모두 <strong>AES-256 알고리즘</strong>으로 암호화합니다. KMS 키를 사용하여 관리됩니다.
+      </p>
+
+      <h3>RDS 암호화 범위</h3>
+
+      <ul>
+        <li>DB 인스턴스의 기본 스토리지</li>
+        <li>자동 백업</li>
+        <li>수동 스냅샷</li>
+        <li>읽기 전용 복제본 (Read Replica)</li>
+        <li>트랜잭션 로그</li>
+      </ul>
+
+      <div class="info-box warning">
+        <div class="info-box-title">중요: 암호화는 생성 시에만 설정 가능</div>
+        <p>
+          RDS 인스턴스의 암호화는 <strong>생성 시에만</strong> 설정할 수 있습니다.
+          이미 생성된 비암호화 RDS 인스턴스를 직접 암호화로 변환하는 것은 불가능합니다.
+          기존 DB를 암호화하려면 아래의 마이그레이션 절차를 따라야 합니다.
+        </p>
+      </div>
+
+      <h3>기존 비암호화 DB를 암호화 DB로 전환</h3>
+
+      <div class="diagram">
+        <div class="diagram-title">비암호화 RDS -> 암호화 RDS 전환 과정</div>
+        <div class="diagram-row">
+          <div class="diagram-box database">
+            <div class="box-title">원본 RDS</div>
+            <div class="box-sub">비암호화</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box storage">
+            <div class="box-title">스냅샷 생성</div>
+            <div class="box-sub">비암호화 스냅샷</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box encryption">
+            <div class="box-title">스냅샷 복사</div>
+            <div class="box-sub">암호화 옵션 활성화</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box database">
+            <div class="box-title">새 RDS 복원</div>
+            <div class="box-sub">암호화된 인스턴스</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+        <pre><code># 1단계: 현재 RDS 인스턴스의 스냅샷 생성
+aws rds create-db-snapshot \
+  --db-instance-identifier shopeasy-db \
+  --db-snapshot-identifier shopeasy-db-unencrypted-snapshot
+
+# 스냅샷 완료 대기
+aws rds wait db-snapshot-available \
+  --db-snapshot-identifier shopeasy-db-unencrypted-snapshot
+
+# 2단계: 암호화된 스냅샷으로 복사
+aws rds copy-db-snapshot \
+  --source-db-snapshot-identifier shopeasy-db-unencrypted-snapshot \
+  --target-db-snapshot-identifier shopeasy-db-encrypted-snapshot \
+  --kms-key-id alias/shopeasy-data-key \
+  --copy-tags
+
+# 암호화 스냅샷 완료 대기
+aws rds wait db-snapshot-available \
+  --db-snapshot-identifier shopeasy-db-encrypted-snapshot
+
+# 3단계: 암호화된 스냅샷에서 새 인스턴스 복원
+aws rds restore-db-instance-from-db-snapshot \
+  --db-instance-identifier shopeasy-db-encrypted \
+  --db-snapshot-identifier shopeasy-db-encrypted-snapshot \
+  --db-instance-class db.t3.medium \
+  --db-subnet-group-name shopeasy-db-subnet-group \
+  --vpc-security-group-ids sg-db123
+
+# 4단계: 애플리케이션의 DB 엔드포인트를 새 인스턴스로 변경
+# 5단계: 정상 동작 확인 후 기존 인스턴스 삭제</code></pre>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">다운타임 최소화 전략</div>
+        <p>
+          위 과정에서 다운타임이 발생합니다. 이를 최소화하려면:<br>
+          1. 블루-그린 배포 방식으로 새 암호화 인스턴스를 먼저 준비<br>
+          2. AWS DMS(Database Migration Service)를 사용하여 실시간 복제<br>
+          3. 트래픽을 새 인스턴스로 전환 (DNS 변경 또는 RDS 프록시 사용)<br>
+          4. 정상 확인 후 기존 인스턴스 삭제
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 3: RDS IAM 인증 -->
+    <section class="content-section" id="rds-iam-auth">
+      <h2>3. RDS IAM 인증</h2>
+
+      <p>
+        RDS IAM 인증은 데이터베이스 비밀번호 대신 <strong>IAM 역할과 임시 토큰</strong>을 사용하여
+        RDS에 접속하는 방법입니다. .env 파일에 비밀번호를 저장하는 기존 방식보다
+        훨씬 안전합니다.
+      </p>
+
+      <h3>비밀번호 vs IAM 인증 비교</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>항목</th>
+            <th>비밀번호 인증</th>
+            <th>IAM 인증</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>자격증명 저장</td>
+            <td>.env 파일에 평문 저장 (위험)</td>
+            <td>저장 불필요 (IAM 역할 사용)</td>
+          </tr>
+          <tr>
+            <td>비밀번호 로테이션</td>
+            <td>수동 변경 필요</td>
+            <td>토큰 자동 만료 (15분)</td>
+          </tr>
+          <tr>
+            <td>접근 제어</td>
+            <td>DB 레벨 권한만</td>
+            <td>IAM 정책 + DB 레벨 권한</td>
+          </tr>
+          <tr>
+            <td>감사</td>
+            <td>DB 로그만</td>
+            <td>CloudTrail + DB 로그</td>
+          </tr>
+          <tr>
+            <td>유출 시 영향</td>
+            <td>비밀번호 변경 전까지 접근 가능</td>
+            <td>토큰 15분 후 자동 만료</td>
+          </tr>
+          <tr>
+            <td>지원 엔진</td>
+            <td>모든 엔진</td>
+            <td>MySQL, PostgreSQL, MariaDB</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">IAM 인증 동작 방식</div>
+        <p>
+          1. EC2 인스턴스(앱 서버)가 IAM 역할을 통해 <code>rds-db:connect</code> 권한을 보유<br>
+          2. 앱 서버가 <code>generate-db-auth-token</code> API를 호출하여 임시 인증 토큰 생성<br>
+          3. 이 토큰을 비밀번호 대신 사용하여 RDS에 접속<br>
+          4. 토큰은 <strong>15분 후 자동 만료</strong>되므로 유출되어도 위험이 최소화됨
+        </p>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">RDS IAM 인증 흐름</div>
+        <div class="diagram-row">
+          <div class="diagram-box compute">
+            <div class="box-title">EC2 앱 서버</div>
+            <div class="box-sub">IAM 역할 보유</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box iam">
+            <div class="box-title">STS</div>
+            <div class="box-sub">generate-db-auth-token</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box encryption">
+            <div class="box-title">임시 토큰</div>
+            <div class="box-sub">15분 유효</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box database">
+            <div class="box-title">RDS MySQL</div>
+            <div class="box-sub">토큰으로 인증</div>
+          </div>
+        </div>
+      </div>
+
+      <h3>IAM 인증 설정을 위한 IAM 정책</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowRDSIAMAuth",
+      "Effect": "Allow",
+      "Action": [
+        "rds-db:connect"
+      ],
+      "Resource": [
+        "arn:aws:rds-db:ap-northeast-2:123456789012:dbuser:dbi-resource-id/shopeasy_app"
+      ]
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">리소스 ARN 형식 주의</div>
+        <p>
+          <code>rds-db:connect</code> 액션의 리소스 ARN은 일반적인 RDS ARN과 다릅니다.<br>
+          형식: <code>arn:aws:rds-db:REGION:ACCOUNT:dbuser:DBI_RESOURCE_ID/DB_USER_NAME</code><br>
+          <code>DBI_RESOURCE_ID</code>는 RDS 인스턴스의 리소스 ID(dbi-xxxx)이며,
+          <code>DB_USER_NAME</code>은 MySQL에서 생성한 IAM 인증 사용자 이름입니다.
+        </p>
+      </div>
+
+      <h3>Node.js 애플리케이션에서 IAM 인증 코드</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">javascript</span><button class="copy-btn">복사</button></div>
+        <pre><code>const { RDSClient } = require('@aws-sdk/client-rds');
+const { Signer } = require('@aws-sdk/rds-signer');
+const mysql = require('mysql2/promise');
+
+async function getConnection() {
+  // IAM 인증 토큰 생성
+  const signer = new Signer({
+    hostname: 'shopeasy-db.xxxx.ap-northeast-2.rds.amazonaws.com',
+    port: 3306,
+    username: 'shopeasy_app',
+    region: 'ap-northeast-2'
+  });
+
+  const token = await signer.getAuthToken();
+
+  // 토큰을 비밀번호로 사용하여 접속
+  const connection = await mysql.createConnection({
+    host: 'shopeasy-db.xxxx.ap-northeast-2.rds.amazonaws.com',
+    port: 3306,
+    user: 'shopeasy_app',
+    password: token,  // IAM 인증 토큰
+    database: 'shopeasy',
+    ssl: {
+      rejectUnauthorized: true  // SSL 필수
+    }
+  });
+
+  return connection;
+}
+
+// 사용 예시
+async function main() {
+  const conn = await getConnection();
+  const [rows] = await conn.execute('SELECT COUNT(*) as count FROM products');
+  console.log('상품 수:', rows[0].count);
+  await conn.end();
+}
+
+main().catch(console.error);</code></pre>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">커넥션 풀 사용 시 주의</div>
+        <p>
+          IAM 인증 토큰은 15분 후 만료됩니다. 커넥션 풀을 사용하는 경우
+          토큰 만료 전에 새 토큰을 발급받아야 합니다.
+          커넥션 풀 라이브러리의 <code>maxIdleTime</code>을 10분 이하로 설정하거나,
+          토큰 갱신 로직을 구현하세요.
+          또는 <strong>RDS Proxy</strong>를 사용하면 커넥션 관리와 IAM 인증을 더 효율적으로 처리할 수 있습니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 4: RDS SSL/TLS 강제 -->
+    <section class="content-section" id="rds-ssl-tls">
+      <h2>4. RDS SSL/TLS 강제</h2>
+
+      <p>
+        EC2 앱 서버와 RDS 간의 통신을 SSL/TLS로 암호화하여 네트워크 도청을 방지합니다.
+        특히 VPC 내부라 하더라도 SSL/TLS를 강제하는 것이 보안 모범 사례입니다.
+      </p>
+
+      <h3>MySQL에서 SSL 강제 설정</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">sql</span><button class="copy-btn">복사</button></div>
+        <pre><code>-- MySQL에서 특정 사용자에게 SSL 접속 강제
+ALTER USER 'shopeasy_app'@'%' REQUIRE SSL;
+
+-- SSL 상태 확인
+SHOW STATUS LIKE 'Ssl_cipher';
+-- 출력 예: AES256-SHA (SSL이 활성화되어 있음)
+
+-- 현재 연결의 SSL 사용 여부 확인
+SELECT * FROM performance_schema.session_status
+WHERE VARIABLE_NAME = 'Ssl_cipher';</code></pre>
+      </div>
+
+      <h3>RDS 파라미터 그룹으로 SSL 강제</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+        <pre><code># 커스텀 파라미터 그룹 생성
+aws rds create-db-parameter-group \
+  --db-parameter-group-name shopeasy-mysql-ssl \
+  --db-parameter-group-family mysql8.0 \
+  --description "ShopEasy MySQL SSL enforcement"
+
+# require_secure_transport 파라미터 활성화
+aws rds modify-db-parameter-group \
+  --db-parameter-group-name shopeasy-mysql-ssl \
+  --parameters "ParameterName=require_secure_transport,ParameterValue=ON,ApplyMethod=immediate"
+
+# 파라미터 그룹을 RDS 인스턴스에 적용
+aws rds modify-db-instance \
+  --db-instance-identifier shopeasy-db \
+  --db-parameter-group-name shopeasy-mysql-ssl \
+  --apply-immediately</code></pre>
+      </div>
+
+      <h3>RDS SSL 인증서 다운로드</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+        <pre><code># 글로벌 번들 인증서 다운로드
+wget https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+
+# 리전별 인증서 다운로드 (ap-northeast-2)
+wget https://truststore.pki.rds.amazonaws.com/ap-northeast-2/ap-northeast-2-bundle.pem
+
+# MySQL CLI에서 SSL 접속 테스트
+mysql -h shopeasy-db.xxxx.ap-northeast-2.rds.amazonaws.com \
+  -u shopeasy_app \
+  --ssl-ca=global-bundle.pem \
+  --ssl-mode=VERIFY_IDENTITY \
+  -p</code></pre>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">SSL 인증서 만료 관리</div>
+        <p>
+          RDS SSL 인증서는 정기적으로 갱신됩니다. AWS는 인증서 갱신 시 이메일로 알림을 보내지만,
+          애플리케이션에서 인증서를 하드코딩한 경우 갱신 시 서비스 장애가 발생할 수 있습니다.
+          <strong>글로벌 번들 인증서(global-bundle.pem)</strong>를 사용하면 여러 버전의 CA 인증서가
+          포함되어 있어 갱신 시 영향을 최소화할 수 있습니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 5: RDS 보안 베스트 프랙티스 -->
+    <section class="content-section" id="rds-best-practices">
+      <h2>5. RDS 보안 베스트 프랙티스</h2>
+
+      <h3>네트워크 격리</h3>
+
+      <div class="diagram">
+        <div class="diagram-title">ShopEasy RDS 네트워크 보안 아키텍처</div>
+        <div class="diagram-group vpc" style="padding: 1.5rem;">
+          <span class="diagram-group-label">VPC</span>
+          <div class="diagram-row">
+            <div class="diagram-group subnet-pub" style="padding: 1rem;">
+              <span class="diagram-group-label">Public Subnet</span>
+              <div class="diagram-box network">
+                <div class="box-title">ALB</div>
+                <div class="box-sub">인터넷 트래픽 수신</div>
+              </div>
+            </div>
+          </div>
+          <div class="diagram-row" style="margin-top: 0.5rem;">
+            <div class="diagram-arrow down">&darr;</div>
+          </div>
+          <div class="diagram-row">
+            <div class="diagram-group subnet-priv" style="padding: 1rem;">
+              <span class="diagram-group-label">Private Subnet (App)</span>
+              <div class="diagram-box compute">
+                <div class="box-title">EC2 앱 서버</div>
+                <div class="box-sub">SG: ALB에서만 허용</div>
+              </div>
+            </div>
+          </div>
+          <div class="diagram-row" style="margin-top: 0.5rem;">
+            <div class="diagram-arrow down">&darr;</div>
+          </div>
+          <div class="diagram-row">
+            <div class="diagram-group subnet-priv" style="padding: 1rem;">
+              <span class="diagram-group-label">Private Subnet (DB) - 인터넷 접근 불가</span>
+              <div class="diagram-box database">
+                <div class="box-title">RDS MySQL</div>
+                <div class="box-sub">SG: EC2 SG에서 3306만 허용</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3>보안 체크리스트</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>항목</th>
+            <th>상태</th>
+            <th>설정 방법</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>프라이빗 서브넷 배치</td>
+            <td style="color: var(--success); font-weight: 700;">필수</td>
+            <td>DB 서브넷 그룹에 프라이빗 서브넷만 포함</td>
+          </tr>
+          <tr>
+            <td>퍼블릭 액세스 비활성화</td>
+            <td style="color: var(--success); font-weight: 700;">필수</td>
+            <td><code>--no-publicly-accessible</code></td>
+          </tr>
+          <tr>
+            <td>보안그룹 최소화</td>
+            <td style="color: var(--success); font-weight: 700;">필수</td>
+            <td>앱 서버 SG에서 3306 포트만 허용</td>
+          </tr>
+          <tr>
+            <td>저장 시 암호화</td>
+            <td style="color: var(--success); font-weight: 700;">필수</td>
+            <td><code>--storage-encrypted --kms-key-id</code></td>
+          </tr>
+          <tr>
+            <td>SSL/TLS 강제</td>
+            <td style="color: var(--success); font-weight: 700;">필수</td>
+            <td><code>require_secure_transport=ON</code></td>
+          </tr>
+          <tr>
+            <td>IAM 인증</td>
+            <td style="color: var(--warning); font-weight: 700;">권장</td>
+            <td><code>--enable-iam-database-authentication</code></td>
+          </tr>
+          <tr>
+            <td>자동 백업</td>
+            <td style="color: var(--success); font-weight: 700;">필수</td>
+            <td><code>--backup-retention-period 7</code></td>
+          </tr>
+          <tr>
+            <td>삭제 보호</td>
+            <td style="color: var(--warning); font-weight: 700;">권장</td>
+            <td><code>--deletion-protection</code></td>
+          </tr>
+          <tr>
+            <td>마이너 버전 자동 업그레이드</td>
+            <td style="color: var(--warning); font-weight: 700;">권장</td>
+            <td><code>--auto-minor-version-upgrade</code></td>
+          </tr>
+          <tr>
+            <td>스냅샷 암호화</td>
+            <td style="color: var(--success); font-weight: 700;">필수</td>
+            <td>암호화된 인스턴스의 스냅샷은 자동 암호화</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">스냅샷 공유 시 주의</div>
+        <p>
+          RDS 스냅샷을 다른 계정과 공유할 때, <strong>AWS 관리형 키</strong>로 암호화된 스냅샷은
+          공유할 수 없습니다. 교차 계정 공유가 필요한 경우 <strong>고객 관리형 KMS 키</strong>를 사용하고,
+          해당 키의 키 정책에서 대상 계정에 복호화 권한을 부여해야 합니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 6: DynamoDB 암호화 -->
+    <section class="content-section" id="dynamodb-encryption">
+      <h2>6. DynamoDB 암호화</h2>
+
+      <p>
+        DynamoDB는 기본적으로 <strong>모든 데이터를 암호화</strong>합니다.
+        사용자가 암호화를 비활성화할 수 없으며, 키 관리 방식을 선택할 수 있습니다.
+        ShopEasy에서 DynamoDB를 세션 관리나 캐시용으로 사용하는 경우,
+        적절한 키 유형을 선택해야 합니다.
+      </p>
+
+      <h3>DynamoDB 암호화 키 유형</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>키 유형</th>
+            <th>관리 주체</th>
+            <th>CloudTrail 감사</th>
+            <th>비용</th>
+            <th>사용 사례</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>AWS 소유 키</strong></td>
+            <td>AWS (기본값)</td>
+            <td>불가</td>
+            <td>무료</td>
+            <td>기본 암호화, 비용 절감</td>
+          </tr>
+          <tr>
+            <td><strong>AWS 관리형 키</strong></td>
+            <td>AWS (aws/dynamodb)</td>
+            <td>가능</td>
+            <td>무료 (API 호출 비용)</td>
+            <td>감사 추적 필요 시</td>
+          </tr>
+          <tr>
+            <td><strong>고객 관리형 키</strong></td>
+            <td>사용자</td>
+            <td>가능</td>
+            <td>$1/월 + API 호출</td>
+            <td>세분화된 접근 제어, 교차 계정</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+        <pre><code># 고객 관리형 KMS 키로 DynamoDB 테이블 암호화 변경
+aws dynamodb update-table \
+  --table-name ShopEasy-Sessions \
+  --sse-specification \
+    Enabled=true,\
+    SSEType=KMS,\
+    KMSMasterKeyId=alias/shopeasy-data-key
+
+# 현재 암호화 설정 확인
+aws dynamodb describe-table \
+  --table-name ShopEasy-Sessions \
+  --query "Table.SSEDescription"</code></pre>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">DynamoDB 암호화 키 선택 가이드</div>
+        <p>
+          <strong>세션 데이터, 임시 캐시</strong>: AWS 소유 키 (비용 없음, 관리 불필요)<br>
+          <strong>사용자 활동 로그</strong>: AWS 관리형 키 (CloudTrail 감사 가능)<br>
+          <strong>결제 관련 데이터</strong>: 고객 관리형 키 (세분화된 접근 제어, PCI-DSS 준수)
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 7: DynamoDB 세분화된 접근 제어 -->
+    <section class="content-section" id="dynamodb-fine-grained">
+      <h2>7. DynamoDB 세분화된 접근 제어</h2>
+
+      <p>
+        DynamoDB의 세분화된 접근 제어(Fine-grained access control)는
+        IAM 정책의 <strong>Condition 키</strong>를 활용하여
+        특정 항목(item)이나 속성(attribute) 수준에서 접근을 제한하는 기능입니다.
+      </p>
+
+      <div class="info-box concept">
+        <div class="info-box-title">왜 세분화된 접근 제어가 필요한가?</div>
+        <p>
+          ShopEasy에서 DynamoDB로 사용자별 위시리스트를 관리한다고 가정하면,
+          각 사용자는 <strong>본인의 위시리스트만</strong> 읽고 쓸 수 있어야 합니다.
+          다른 사용자의 위시리스트에 접근하거나 수정할 수 없어야 합니다.
+          이를 테이블 수준 IAM 정책으로는 구현할 수 없고, Condition 키로 구현해야 합니다.
+        </p>
+      </div>
+
+      <h3>사용자별 항목 접근 제한 정책</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowUserToAccessOwnItems",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:Query"
+      ],
+      "Resource": "arn:aws:dynamodb:ap-northeast-2:123456789012:table/ShopEasy-Wishlists",
+      "Condition": {
+        "ForAllValues:StringEquals": {
+          "dynamodb:LeadingKeys": [
+            "${www.amazon.com:user_id}"
+          ]
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <p>
+        위 정책에서 <code>dynamodb:LeadingKeys</code> 조건은 파티션 키 값이
+        인증된 사용자의 ID와 일치하는 항목에만 접근을 허용합니다.
+      </p>
+
+      <h3>특정 속성(Attribute)만 접근 제한</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowReadNonSensitiveAttributes",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:Query"
+      ],
+      "Resource": "arn:aws:dynamodb:ap-northeast-2:123456789012:table/ShopEasy-Users",
+      "Condition": {
+        "ForAllValues:StringEquals": {
+          "dynamodb:Attributes": [
+            "userId",
+            "displayName",
+            "email",
+            "createdAt"
+          ]
+        },
+        "StringEqualsIfExists": {
+          "dynamodb:Select": "SPECIFIC_ATTRIBUTES"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">세분화된 접근 제어 주의사항</div>
+        <p>
+          1. <code>dynamodb:Attributes</code> 조건은 <code>Scan</code>이나 <code>Query</code>에서
+          <strong>ProjectionExpression</strong>을 사용할 때만 적용됩니다<br>
+          2. 조건에 파티션 키와 정렬 키를 <strong>반드시 포함</strong>해야 합니다. 그렇지 않으면 항목에 접근할 수 없습니다<br>
+          3. <code>ForAllValues</code>는 요청한 모든 속성이 허용 목록에 있어야 합니다.
+          빈 세트는 항상 참으로 평가되므로 주의하세요<br>
+          4. 실제 적용 전에 IAM 정책 시뮬레이터로 충분히 테스트하세요
+        </p>
+      </div>
+
+      <h3>DynamoDB 접근 제어 Condition 키 정리</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Condition 키</th>
+            <th>설명</th>
+            <th>사용 사례</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>dynamodb:LeadingKeys</code></td>
+            <td>파티션 키 값 제한</td>
+            <td>사용자별 데이터 격리</td>
+          </tr>
+          <tr>
+            <td><code>dynamodb:Attributes</code></td>
+            <td>접근 가능한 속성 제한</td>
+            <td>민감 속성 접근 차단</td>
+          </tr>
+          <tr>
+            <td><code>dynamodb:Select</code></td>
+            <td>Query/Scan의 Select 값 제한</td>
+            <td>SPECIFIC_ATTRIBUTES만 허용</td>
+          </tr>
+          <tr>
+            <td><code>dynamodb:ReturnValues</code></td>
+            <td>반환 값 형식 제한</td>
+            <td>NONE 또는 ALL_NEW만 허용</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 섹션 8: 실습 -->
+    <section class="content-section" id="lab-rds-iam">
+      <h2>8. 실습: RDS IAM 인증 설정</h2>
+
+      <div class="lab-section">
+        <div class="lab-title">실습: ShopEasy RDS에 IAM 인증 설정</div>
+        <div class="steps">
+
+          <div class="step">
+            <div class="step-title">RDS 인스턴스에서 IAM 인증 활성화</div>
+            <p>기존 ShopEasy RDS 인스턴스에 IAM 인증을 활성화합니다.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># IAM 데이터베이스 인증 활성화
+aws rds modify-db-instance \
+  --db-instance-identifier shopeasy-db \
+  --enable-iam-database-authentication \
+  --apply-immediately
+
+# 변경 사항 적용 대기
+aws rds wait db-instance-available \
+  --db-instance-identifier shopeasy-db
+
+# 설정 확인
+aws rds describe-db-instances \
+  --db-instance-identifier shopeasy-db \
+  --query "DBInstances[0].IAMDatabaseAuthenticationEnabled"
+# 출력: true</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">MySQL에서 IAM 인증 사용자 생성</div>
+            <p>MySQL에 접속하여 IAM 인증용 DB 사용자를 생성합니다.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">sql</span><button class="copy-btn">복사</button></div>
+              <pre><code>-- MySQL에 접속 (기존 마스터 계정 사용)
+-- mysql -h shopeasy-db.xxxx.rds.amazonaws.com -u admin -p
+
+-- IAM 인증 사용자 생성
+CREATE USER 'shopeasy_iam'@'%' IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS';
+
+-- SSL 접속 강제
+ALTER USER 'shopeasy_iam'@'%' REQUIRE SSL;
+
+-- 필요한 권한 부여
+GRANT SELECT, INSERT, UPDATE, DELETE ON shopeasy.* TO 'shopeasy_iam'@'%';
+
+-- 권한 적용
+FLUSH PRIVILEGES;
+
+-- 사용자 확인
+SELECT user, host, plugin FROM mysql.user WHERE user = 'shopeasy_iam';</code></pre>
+            </div>
+            <div class="info-box concept">
+              <div class="info-box-title">AWSAuthenticationPlugin</div>
+              <p>
+                <code>IDENTIFIED WITH AWSAuthenticationPlugin AS 'RDS'</code>는 MySQL에게
+                이 사용자가 IAM 인증 토큰으로 접속한다는 것을 알려줍니다.
+                이 사용자는 비밀번호 대신 IAM 인증 토큰을 사용해야 합니다.
+              </p>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">EC2 IAM 역할에 rds-db:connect 권한 추가</div>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># RDS 리소스 ID 확인
+DBI_RESOURCE_ID=$(aws rds describe-db-instances \
+  --db-instance-identifier shopeasy-db \
+  --query "DBInstances[0].DbiResourceId" --output text)
+
+echo "DBI Resource ID: $DBI_RESOURCE_ID"
+
+# IAM 정책 생성
+aws iam put-role-policy \
+  --role-name ShopEasy-EC2-AppRole \
+  --policy-name RDS-IAM-Auth \
+  --policy-document "{
+    \"Version\": \"2012-10-17\",
+    \"Statement\": [
+      {
+        \"Effect\": \"Allow\",
+        \"Action\": \"rds-db:connect\",
+        \"Resource\": \"arn:aws:rds-db:ap-northeast-2:$(aws sts get-caller-identity --query Account --output text):dbuser:${DBI_RESOURCE_ID}/shopeasy_iam\"
+      }
+    ]
+  }"</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">IAM 인증 토큰 생성 및 접속 테스트</div>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># RDS 엔드포인트 확인
+RDS_ENDPOINT=$(aws rds describe-db-instances \
+  --db-instance-identifier shopeasy-db \
+  --query "DBInstances[0].Endpoint.Address" --output text)
+
+echo "RDS Endpoint: $RDS_ENDPOINT"
+
+# IAM 인증 토큰 생성
+TOKEN=$(aws rds generate-db-auth-token \
+  --hostname $RDS_ENDPOINT \
+  --port 3306 \
+  --username shopeasy_iam \
+  --region ap-northeast-2)
+
+echo "토큰 길이: ${#TOKEN} 문자"
+echo "토큰 유효 시간: 15분"
+
+# SSL 인증서 다운로드 (아직 없는 경우)
+wget -q https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+
+# IAM 토큰으로 MySQL 접속
+mysql -h $RDS_ENDPOINT \
+  -u shopeasy_iam \
+  --password=$TOKEN \
+  --ssl-ca=global-bundle.pem \
+  --ssl-mode=VERIFY_IDENTITY \
+  -e "SELECT NOW() as current_time, USER() as current_user;"</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">접속 확인 및 보안 점검</div>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code>#!/bin/bash
+echo "======================================"
+echo " ShopEasy RDS 보안 점검"
+echo "======================================"
+
+DB_ID="shopeasy-db"
+
+echo ""
+echo "[1] IAM 인증 활성화 상태"
+aws rds describe-db-instances \
+  --db-instance-identifier $DB_ID \
+  --query "DBInstances[0].IAMDatabaseAuthenticationEnabled" \
+  --output text
+
+echo ""
+echo "[2] 저장 시 암호화 상태"
+aws rds describe-db-instances \
+  --db-instance-identifier $DB_ID \
+  --query "DBInstances[0].{Encrypted:StorageEncrypted,KmsKeyId:KmsKeyId}" \
+  --output table
+
+echo ""
+echo "[3] 퍼블릭 접근 설정"
+aws rds describe-db-instances \
+  --db-instance-identifier $DB_ID \
+  --query "DBInstances[0].PubliclyAccessible" \
+  --output text
+
+echo ""
+echo "[4] 삭제 보호 설정"
+aws rds describe-db-instances \
+  --db-instance-identifier $DB_ID \
+  --query "DBInstances[0].DeletionProtection" \
+  --output text
+
+echo ""
+echo "[5] 자동 백업 설정"
+aws rds describe-db-instances \
+  --db-instance-identifier $DB_ID \
+  --query "DBInstances[0].BackupRetentionPeriod" \
+  --output text
+
+echo ""
+echo "[6] SSL 파라미터 확인"
+aws rds describe-db-parameters \
+  --db-parameter-group-name shopeasy-mysql-ssl \
+  --query "Parameters[?ParameterName=='require_secure_transport'].{Name:ParameterName,Value:ParameterValue}" \
+  --output table 2>/dev/null || echo "커스텀 파라미터 그룹 미설정"
+
+echo ""
+echo "======================================"
+echo " 점검 완료"
+echo "======================================"</code></pre>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">다음 단계: Secrets Manager로 전환</div>
+        <p>
+          IAM 인증은 강력한 보안을 제공하지만, 모든 시나리오에 적합하지 않을 수 있습니다
+          (높은 초당 연결 수, 커넥션 풀 제한 등).
+          다음 챕터에서 다룰 <strong>AWS Secrets Manager</strong>를 사용하면
+          기존 비밀번호 방식을 유지하면서도 자동 로테이션, 안전한 저장을 구현할 수 있습니다.
+          실제 운영에서는 IAM 인증과 Secrets Manager를 상황에 맞게 선택하거나 병행합니다.
+        </p>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">핵심 정리</div>
+        <p>
+          이번 챕터에서 배운 데이터베이스 보안의 핵심을 정리합니다:<br><br>
+          <strong>RDS 보안</strong>: 저장 시 암호화(KMS) + SSL/TLS 강제 + IAM 인증 + 프라이빗 서브넷 + 보안그룹 최소화<br>
+          <strong>DynamoDB 보안</strong>: 기본 암호화(키 유형 선택) + 세분화된 접근 제어(IAM Condition)<br><br>
+          데이터베이스는 이커머스의 가장 소중한 자산입니다.
+          여러 겹의 보안 계층을 적용하여 심층 방어를 구현해야 합니다.
+          다음 챕터에서는 .env 파일에 저장된 비밀번호를 Secrets Manager와 Parameter Store로
+          안전하게 관리하는 방법을 배우겠습니다.
+        </p>
+      </div>
+    </section>
+
+    <div class="chapter-nav">
+      <a href="11-s3-security.html" class="prev">이전: S3 보안</a>
+      <a href="13-secrets-manager.html" class="next">다음: Secrets Manager & Parameter Store</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/12-rds-dynamodb-security.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>

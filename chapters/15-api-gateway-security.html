@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/15-api-gateway-security.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Gateway 보안 - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li class="sidebar-section">API Gateway 보안</li>
+      <li><a href="#auth-methods">인증 방식 비교</a></li>
+      <li><a href="#throttling">사용량 계획 & 스로틀링</a></li>
+      <li><a href="#apigw-waf">WAF 연동</a></li>
+      <li><a href="#resource-policy">리소스 정책</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 15</span>
+      <h1>API Gateway 보안</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>API Gateway의 4가지 인증 방식(API Key, IAM, Cognito, Lambda Authorizer)을 이해하고 비교할 수 있다</li>
+          <li>사용량 계획과 스로틀링을 설정하여 API 남용과 DDoS를 방지할 수 있다</li>
+          <li>API Gateway에 WAF를 연동하여 웹 공격을 차단할 수 있다</li>
+          <li>리소스 정책을 사용하여 IP 및 VPC 기반 접근 제어를 구현할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Section 1: 인증 방식 비교 -->
+    <section class="content-section" id="auth-methods">
+      <h2>인증 방식 비교</h2>
+
+      <div class="info-box concept">
+        <div class="info-box-title">핵심 개념: API Gateway 인증</div>
+        <p>API Gateway는 백엔드 서비스(Lambda, EC2 등)의 진입점입니다. 인증되지 않은 요청이 백엔드에 도달하지 않도록 <strong>API Gateway 레벨에서 인증</strong>을 수행하는 것이 중요합니다. AWS는 4가지 인증 방식을 제공하며, 각각 다른 사용 사례에 적합합니다.</p>
+      </div>
+
+      <h3>1. API Key 인증</h3>
+
+      <div class="info-box warning">
+        <div class="info-box-title">주의: API Key는 "인증"이 아닙니다</div>
+        <p>API Key는 엄밀히 말하면 인증(Authentication)이 아니라 <strong>식별(Identification)</strong>입니다. 누가 호출하는지 식별하고 사용량을 추적하는 용도이며, 보안 인증 수단으로 사용해서는 안 됩니다. API Key만으로는 충분한 보안을 제공하지 않으므로 반드시 다른 인증 방식과 함께 사용하세요.</p>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># API Key 생성
+aws apigateway create-api-key \
+  --name "ShopEasy-Partner-Key" \
+  --description "ShopEasy 파트너사 API 키" \
+  --enabled
+
+# API Key를 사용한 호출
+curl -H "x-api-key: a1b2c3d4e5f6g7h8i9j0" \
+  https://api.shopeasy.example.com/products</code></pre>
+      </div>
+
+      <h3>2. IAM 인증 (SigV4)</h3>
+
+      <p>AWS IAM 자격 증명(Access Key/Secret Key 또는 IAM Role)으로 요청에 서명하는 방식입니다. AWS 서비스 간 통신에 가장 적합합니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># IAM 인증을 사용한 API 호출 (SigV4 서명)
+aws apigateway test-invoke-method \
+  --rest-api-id abc123 \
+  --resource-id xyz789 \
+  --http-method GET
+
+# 또는 AWS CLI로 직접 호출
+curl -X GET \
+  "https://abc123.execute-api.ap-northeast-2.amazonaws.com/prod/products" \
+  --aws-sigv4 "aws:amz:ap-northeast-2:execute-api" \
+  --user "$AWS_ACCESS_KEY_ID:$AWS_SECRET_ACCESS_KEY"</code></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>// API 호출을 허용하는 IAM 정책
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "execute-api:Invoke",
+      "Resource": "arn:aws:execute-api:ap-northeast-2:123456789012:abc123/prod/GET/products"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>3. Cognito User Pool Authorizer</h3>
+
+      <p>Amazon Cognito User Pool에서 발급한 JWT 토큰으로 인증하는 방식입니다. 웹/모바일 앱의 사용자 인증에 가장 적합합니다.</p>
+
+      <div class="diagram">
+        <div class="diagram-title">Cognito Authorizer 흐름</div>
+        <div class="diagram-row">
+          <div class="diagram-box user">
+            <strong>1. 사용자 로그인</strong>
+            <p>이메일/비밀번호</p>
+            <p>또는 소셜 로그인</p>
+          </div>
+          <div class="arrow">&rarr;</div>
+          <div class="diagram-box iam">
+            <strong>2. Cognito</strong>
+            <p>인증 처리</p>
+            <p>JWT 토큰 발급</p>
+          </div>
+          <div class="arrow">&rarr;</div>
+          <div class="diagram-box user">
+            <strong>3. API 호출</strong>
+            <p>Authorization 헤더에</p>
+            <p>JWT 토큰 포함</p>
+          </div>
+          <div class="arrow">&rarr;</div>
+          <div class="diagram-box security">
+            <strong>4. API Gateway</strong>
+            <p>JWT 검증</p>
+            <p>유효하면 백엔드 전달</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># Cognito Authorizer 생성
+aws apigateway create-authorizer \
+  --rest-api-id abc123 \
+  --name "ShopEasy-Cognito-Auth" \
+  --type COGNITO_USER_POOLS \
+  --provider-arns "arn:aws:cognito-idp:ap-northeast-2:123456789012:userpool/ap-northeast-2_AbCdEfG" \
+  --identity-source "method.request.header.Authorization"
+
+# Cognito 토큰으로 API 호출
+curl -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  https://api.shopeasy.example.com/orders</code></pre>
+      </div>
+
+      <h3>4. Lambda Authorizer (커스텀 인증)</h3>
+
+      <p>Lambda 함수로 커스텀 인증 로직을 구현하는 방식입니다. 외부 IdP(Identity Provider), 자체 토큰, 복잡한 인증 로직에 적합합니다.</p>
+
+      <div class="diagram">
+        <div class="diagram-title">Lambda Authorizer 흐름</div>
+        <div class="diagram-row">
+          <div class="diagram-box user">
+            <strong>1. API 호출</strong>
+            <p>토큰 또는 파라미터 포함</p>
+          </div>
+          <div class="arrow">&rarr;</div>
+          <div class="diagram-box security">
+            <strong>2. API Gateway</strong>
+            <p>Lambda Authorizer 호출</p>
+          </div>
+          <div class="arrow">&rarr;</div>
+          <div class="diagram-box serverless">
+            <strong>3. Lambda 함수</strong>
+            <p>토큰 검증</p>
+            <p>IAM 정책 반환</p>
+          </div>
+          <div class="arrow">&rarr;</div>
+          <div class="diagram-box compute">
+            <strong>4. 백엔드</strong>
+            <p>인증 성공 시 요청 전달</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">javascript</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>// Lambda Authorizer 함수 (Token 기반)
+exports.handler = async (event) => {
+  const token = event.authorizationToken; // "Bearer xxx..."
+
+  try {
+    // 토큰에서 Bearer 접두사 제거
+    const bearerToken = token.replace('Bearer ', '');
+
+    // 토큰 검증 (JWT 디코딩, 외부 IdP 검증 등)
+    const decoded = verifyToken(bearerToken);
+
+    // 인증 성공 - Allow 정책 반환
+    return {
+      principalId: decoded.userId,
+      policyDocument: {
+        Version: '2012-10-17',
+        Statement: [{
+          Action: 'execute-api:Invoke',
+          Effect: 'Allow',
+          Resource: event.methodArn
+        }]
+      },
+      context: {
+        userId: decoded.userId,
+        email: decoded.email,
+        role: decoded.role  // admin, customer 등
+      }
+    };
+  } catch (error) {
+    // 인증 실패 - Deny 정책 반환 또는 'Unauthorized' 예외
+    throw new Error('Unauthorized');
+  }
+};
+
+function verifyToken(token) {
+  const jwt = require('jsonwebtoken');
+  // JWT_SECRET은 환경변수 또는 Secrets Manager에서 가져옵니다
+  return jwt.verify(token, process.env.JWT_SECRET);
+}</code></pre>
+      </div>
+
+      <h3>인증 방식 종합 비교</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>비교 항목</th>
+            <th>API Key</th>
+            <th>IAM (SigV4)</th>
+            <th>Cognito</th>
+            <th>Lambda Authorizer</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>보안 수준</td>
+            <td>낮음</td>
+            <td><strong>높음</strong></td>
+            <td><strong>높음</strong></td>
+            <td>커스텀에 따라 다름</td>
+          </tr>
+          <tr>
+            <td>구현 복잡도</td>
+            <td>매우 쉬움</td>
+            <td>중간</td>
+            <td>중간</td>
+            <td>높음</td>
+          </tr>
+          <tr>
+            <td>사용자 관리</td>
+            <td>없음</td>
+            <td>IAM User/Role</td>
+            <td><strong>Cognito User Pool</strong></td>
+            <td>외부 시스템</td>
+          </tr>
+          <tr>
+            <td>사용 사례</td>
+            <td>사용량 추적, 파트너 식별</td>
+            <td>AWS 서비스 간 호출</td>
+            <td><strong>웹/모바일 앱 사용자</strong></td>
+            <td>외부 IdP, 레거시 시스템</td>
+          </tr>
+          <tr>
+            <td>토큰 캐싱</td>
+            <td>해당 없음</td>
+            <td>해당 없음</td>
+            <td>JWT 자체 검증</td>
+            <td><strong>최대 1시간 캐싱</strong></td>
+          </tr>
+          <tr>
+            <td>추가 비용</td>
+            <td>없음</td>
+            <td>없음</td>
+            <td>Cognito 요금</td>
+            <td>Lambda 실행 요금</td>
+          </tr>
+          <tr>
+            <td>ShopEasy 적합도</td>
+            <td>파트너 API</td>
+            <td>내부 서비스</td>
+            <td><strong>고객 인증 (최적)</strong></td>
+            <td>기존 JWT 토큰 연동</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">Best Practice: ShopEasy API 인증 설계</div>
+        <ul>
+          <li><strong>고객 API</strong> (/orders, /cart, /profile): Cognito User Pool Authorizer - 소셜 로그인 지원, 사용자 관리 편리</li>
+          <li><strong>파트너 API</strong> (/api/v1/products): API Key + Lambda Authorizer - 사용량 추적 + 커스텀 인증</li>
+          <li><strong>내부 관리 API</strong> (/admin): IAM 인증 - 관리자만 AWS 자격 증명으로 접근</li>
+          <li><strong>공개 API</strong> (/public/products): 인증 없음 - 제품 목록 등 공개 데이터 (Rate Limiting은 필수)</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Section 2: 사용량 계획 & 스로틀링 -->
+    <section class="content-section" id="throttling">
+      <h2>사용량 계획 & 스로틀링</h2>
+
+      <div class="info-box concept">
+        <div class="info-box-title">핵심 개념: API 사용량 관리</div>
+        <p>API Gateway의 사용량 계획(Usage Plan)과 스로틀링은 API의 <strong>과도한 사용을 방지</strong>하고, 고객별로 다른 요청 한도를 설정하는 기능입니다. DDoS 공격 완화, 비용 제어, 공정한 자원 분배에 필수적입니다.</p>
+      </div>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 놀이공원의 입장 제한</div>
+        <p>놀이공원을 생각해보세요. <strong>스로틀링</strong>은 놀이기구 탑승 인원 제한(동시에 100명만)과 같고, <strong>할당량(Quota)</strong>은 하루 최대 탑승 횟수(일반권 10회, VIP권 무제한)와 같습니다. 너무 많은 사람이 한꺼번에 몰리면 놀이기구(서버)가 고장 나므로, 적절한 제한이 필요합니다.</p>
+      </div>
+
+      <h3>Usage Plan 개념</h3>
+
+      <div class="diagram">
+        <div class="diagram-title">Usage Plan 구조</div>
+        <div class="diagram-row">
+          <div class="diagram-box user">
+            <strong>API Key A</strong>
+            <p>파트너사 A</p>
+          </div>
+          <div class="arrow">&rarr;</div>
+          <div class="diagram-box iam">
+            <strong>Basic Plan</strong>
+            <p>1,000 req/day</p>
+            <p>10 req/sec</p>
+          </div>
+          <div class="arrow">&rarr;</div>
+          <div class="diagram-box security">
+            <strong>API Gateway</strong>
+            <p>스로틀링 적용</p>
+            <p>할당량 확인</p>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box user">
+            <strong>API Key B</strong>
+            <p>파트너사 B (VIP)</p>
+          </div>
+          <div class="arrow">&rarr;</div>
+          <div class="diagram-box shield">
+            <strong>Premium Plan</strong>
+            <p>100,000 req/day</p>
+            <p>100 req/sec</p>
+          </div>
+          <div class="arrow">&rarr;</div>
+          <div class="diagram-box security">
+            <strong>API Gateway</strong>
+            <p>스로틀링 적용</p>
+            <p>할당량 확인</p>
+          </div>
+        </div>
+      </div>
+
+      <h3>API Key + Usage Plan 조합</h3>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 1. Usage Plan 생성 - Basic
+aws apigateway create-usage-plan \
+  --name "ShopEasy-Basic-Plan" \
+  --description "ShopEasy 기본 파트너 플랜" \
+  --throttle '{"rateLimit": 10, "burstLimit": 20}' \
+  --quota '{"limit": 1000, "period": "DAY"}' \
+  --api-stages '[{
+    "apiId": "abc123",
+    "stage": "prod"
+  }]'
+
+# 2. Usage Plan 생성 - Premium
+aws apigateway create-usage-plan \
+  --name "ShopEasy-Premium-Plan" \
+  --description "ShopEasy 프리미엄 파트너 플랜" \
+  --throttle '{"rateLimit": 100, "burstLimit": 200}' \
+  --quota '{"limit": 100000, "period": "DAY"}' \
+  --api-stages '[{
+    "apiId": "abc123",
+    "stage": "prod"
+  }]'
+
+# 3. API Key 생성
+aws apigateway create-api-key \
+  --name "PartnerA-Key" \
+  --enabled
+
+# 4. API Key를 Usage Plan에 연결
+aws apigateway create-usage-plan-key \
+  --usage-plan-id plan123 \
+  --key-id keyabc \
+  --key-type "API_KEY"</code></pre>
+      </div>
+
+      <h3>요청 한도 (Quota) 설정</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>플랜</th>
+            <th>일일 할당량</th>
+            <th>Rate (req/sec)</th>
+            <th>Burst</th>
+            <th>대상</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Free</td>
+            <td>100</td>
+            <td>1</td>
+            <td>5</td>
+            <td>테스트/평가 사용자</td>
+          </tr>
+          <tr>
+            <td>Basic</td>
+            <td>1,000</td>
+            <td>10</td>
+            <td>20</td>
+            <td>소규모 파트너</td>
+          </tr>
+          <tr>
+            <td>Premium</td>
+            <td>100,000</td>
+            <td>100</td>
+            <td>200</td>
+            <td>대규모 파트너</td>
+          </tr>
+          <tr>
+            <td>Enterprise</td>
+            <td>무제한</td>
+            <td>500</td>
+            <td>1000</td>
+            <td>핵심 파트너</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>스로틀링 (Rate/Burst limit)</h3>
+
+      <div class="info-box concept">
+        <div class="info-box-title">Rate Limit vs Burst Limit</div>
+        <ul>
+          <li><strong>Rate Limit (정상 속도)</strong>: 초당 허용되는 안정적인 요청 수입니다. 토큰 버킷 알고리즘의 토큰 충전 속도에 해당합니다.</li>
+          <li><strong>Burst Limit (순간 최대)</strong>: 순간적으로 허용되는 최대 요청 수입니다. 토큰 버킷에 저장 가능한 최대 토큰 수에 해당합니다. 순간적으로 burst만큼 처리 가능하지만, 지속적으로는 rate limit에 수렴합니다.</li>
+        </ul>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 스로틀링 초과 시 응답
+HTTP/1.1 429 Too Many Requests
+Content-Type: application/json
+
+{
+  "message": "Rate exceeded"
+}
+
+# Retry-After 헤더를 확인하고 재시도해야 합니다</code></pre>
+      </div>
+
+      <h3>DDoS 완화 효과</h3>
+
+      <div class="info-box tip">
+        <div class="info-box-title">팁: API Gateway의 다계층 스로틀링</div>
+        <p>API Gateway는 3단계의 스로틀링을 적용할 수 있습니다.</p>
+        <ul>
+          <li><strong>계정 수준</strong>: 리전당 기본 10,000 req/sec (AWS 한도 증가 요청 가능)</li>
+          <li><strong>Stage 수준</strong>: 특정 API Stage에 대한 전체 스로틀링</li>
+          <li><strong>메서드 수준</strong>: 특정 메서드(GET /products)에 대한 개별 스로틀링</li>
+        </ul>
+        <p>이를 통해 DDoS 공격 시에도 백엔드 서비스(Lambda, EC2)에 과도한 부하가 전달되지 않습니다.</p>
+      </div>
+
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: Usage Plan 생성 및 테스트</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">Step 1: AWS 콘솔에서 Usage Plan 생성</div>
+            <ul>
+              <li>API Gateway 콘솔 > <strong>사용량 계획(Usage Plans)</strong> > 생성</li>
+              <li>이름: <code>ShopEasy-Test-Plan</code></li>
+              <li>스로틀링: Rate = 5 req/sec, Burst = 10</li>
+              <li>할당량: 100 requests/DAY</li>
+              <li>연결된 API 스테이지: ShopEasy API / prod</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 2: API Key 생성 및 연결</div>
+            <ul>
+              <li>API Gateway 콘솔 > <strong>API 키</strong> > 생성</li>
+              <li>이름: <code>Test-API-Key</code></li>
+              <li>자동 생성: 활성화</li>
+              <li>Usage Plan에 연결: ShopEasy-Test-Plan</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 3: API 메서드에 API Key 요구 설정</div>
+            <ul>
+              <li>API Gateway 콘솔 > API > Resources > 메서드 선택</li>
+              <li>메서드 요청 > <strong>API Key Required: true</strong></li>
+              <li>API 재배포</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 4: 스로틀링 테스트</div>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 정상 호출
+curl -H "x-api-key: YOUR_API_KEY" \
+  https://abc123.execute-api.ap-northeast-2.amazonaws.com/prod/products
+# 200 OK
+
+# 빠른 연속 호출로 스로틀링 테스트 (10회 빠르게)
+for i in {1..20}; do
+  echo "Request $i:"
+  curl -s -o /dev/null -w "%{http_code}" \
+    -H "x-api-key: YOUR_API_KEY" \
+    https://abc123.execute-api.ap-northeast-2.amazonaws.com/prod/products
+  echo ""
+done
+# 처음 10개: 200
+# 이후: 429 (Too Many Requests)
+
+# 사용량 확인
+aws apigateway get-usage \
+  --usage-plan-id plan123 \
+  --key-id keyabc \
+  --start-date "2024-01-01" \
+  --end-date "2024-12-31"</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 3: WAF 연동 -->
+    <section class="content-section" id="apigw-waf">
+      <h2>WAF 연동</h2>
+
+      <div class="info-box concept">
+        <div class="info-box-title">핵심 개념: API Gateway + WAF</div>
+        <p>AWS WAF(Web Application Firewall)를 API Gateway에 연동하면 <strong>SQL 인젝션, XSS, 봇 트래픽</strong> 등의 웹 공격을 API 레벨에서 차단할 수 있습니다. API Gateway의 기본 스로틀링을 넘어서, 더욱 정교한 보안 규칙을 적용할 수 있습니다.</p>
+      </div>
+
+      <h3>REST API vs HTTP API WAF 지원</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>기능</th>
+            <th>REST API</th>
+            <th>HTTP API</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>WAF 연동</td>
+            <td><strong>지원</strong></td>
+            <td>미지원 (CloudFront 뒤에 배치하여 우회 가능)</td>
+          </tr>
+          <tr>
+            <td>리소스 정책</td>
+            <td><strong>지원</strong></td>
+            <td>미지원</td>
+          </tr>
+          <tr>
+            <td>API Key / Usage Plan</td>
+            <td><strong>지원</strong></td>
+            <td>미지원</td>
+          </tr>
+          <tr>
+            <td>비용</td>
+            <td>상대적으로 높음</td>
+            <td><strong>최대 70% 저렴</strong></td>
+          </tr>
+          <tr>
+            <td>성능</td>
+            <td>보통</td>
+            <td><strong>더 낮은 지연 시간</strong></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box tip">
+        <div class="info-box-title">팁: HTTP API에 WAF 적용하는 방법</div>
+        <p>HTTP API는 직접 WAF를 연동할 수 없지만, <strong>CloudFront 배포를 HTTP API 앞에 배치</strong>하고 CloudFront에 WAF를 연동하는 방법으로 우회할 수 있습니다. 이 경우 CloudFront의 캐싱, 지역 제한 등의 추가 보안 기능도 활용할 수 있습니다.</p>
+      </div>
+
+      <h3>WAF 규칙 설정 예제</h3>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>// WAF Web ACL - API Gateway용 규칙 설정
+{
+  "Name": "ShopEasy-API-WAF",
+  "Scope": "REGIONAL",
+  "DefaultAction": { "Allow": {} },
+  "Rules": [
+    {
+      "Name": "AWS-AWSManagedRulesSQLiRuleSet",
+      "Priority": 1,
+      "Statement": {
+        "ManagedRuleGroupStatement": {
+          "VendorName": "AWS",
+          "Name": "AWSManagedRulesSQLiRuleSet"
+        }
+      },
+      "Action": { "Block": {} },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "SQLInjection"
+      }
+    },
+    {
+      "Name": "AWS-AWSManagedRulesCommonRuleSet",
+      "Priority": 2,
+      "Statement": {
+        "ManagedRuleGroupStatement": {
+          "VendorName": "AWS",
+          "Name": "AWSManagedRulesCommonRuleSet"
+        }
+      },
+      "Action": { "Block": {} },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "CommonRules"
+      }
+    },
+    {
+      "Name": "RateLimit-API",
+      "Priority": 3,
+      "Statement": {
+        "RateBasedStatement": {
+          "Limit": 2000,
+          "AggregateKeyType": "IP"
+        }
+      },
+      "Action": { "Block": {} },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "RateLimit"
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 1. WAF Web ACL 생성 (REGIONAL scope - API Gateway용)
+aws wafv2 create-web-acl \
+  --name "ShopEasy-API-WAF" \
+  --scope REGIONAL \
+  --default-action '{"Allow":{}}' \
+  --rules file://waf-rules.json \
+  --visibility-config '{
+    "SampledRequestsEnabled": true,
+    "CloudWatchMetricsEnabled": true,
+    "MetricName": "ShopEasyAPIWAF"
+  }'
+
+# 2. API Gateway Stage에 WAF 연결
+aws apigateway update-stage \
+  --rest-api-id abc123 \
+  --stage-name prod \
+  --patch-operations '[{
+    "op": "replace",
+    "path": "/webAclArn",
+    "value": "arn:aws:wafv2:ap-northeast-2:123456789012:regional/webacl/ShopEasy-API-WAF/xxx"
+  }]'
+
+# 3. WAF 로그 확인
+aws wafv2 get-web-acl \
+  --name "ShopEasy-API-WAF" \
+  --scope REGIONAL \
+  --id "xxx"</code></pre>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">Best Practice: API Gateway WAF 규칙 조합</div>
+        <ul>
+          <li><strong>AWS Managed Rules - SQL Injection</strong>: SQL 인젝션 공격 차단 (필수)</li>
+          <li><strong>AWS Managed Rules - Common Rule Set</strong>: 일반적인 웹 공격 차단 (필수)</li>
+          <li><strong>AWS Managed Rules - Known Bad Inputs</strong>: 알려진 악성 페이로드 차단</li>
+          <li><strong>Rate-based Rule</strong>: IP당 요청 수 제한으로 DDoS 완화</li>
+          <li><strong>IP Set Rule</strong>: 알려진 악성 IP 블랙리스트</li>
+          <li><strong>Body Size Restriction</strong>: 비정상적으로 큰 요청 본문 차단</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Section 4: 리소스 정책 -->
+    <section class="content-section" id="resource-policy">
+      <h2>리소스 정책</h2>
+
+      <div class="info-box concept">
+        <div class="info-box-title">핵심 개념: API Gateway 리소스 정책</div>
+        <p>API Gateway 리소스 정책은 <strong>API 자체에 부착하는 IAM 정책</strong>입니다. 누가(Principal), 어디서(IP/VPC), 어떤 API에 접근할 수 있는지를 정의합니다. IAM 정책이 "호출자에게 부여하는 권한"이라면, 리소스 정책은 "API가 허용하는 접근 범위"입니다.</p>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">주의: REST API에서만 지원</div>
+        <p>리소스 정책은 <strong>REST API에서만</strong> 사용할 수 있습니다. HTTP API에서는 사용할 수 없으므로, IP 기반 접근 제어가 필요하면 WAF 또는 Lambda Authorizer를 활용해야 합니다.</p>
+      </div>
+
+      <h3>IP 기반 접근 제어</h3>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>// 특정 IP만 허용하는 리소스 정책
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowSpecificIPs",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "execute-api:Invoke",
+      "Resource": "arn:aws:execute-api:ap-northeast-2:123456789012:abc123/*",
+      "Condition": {
+        "IpAddress": {
+          "aws:SourceIp": [
+            "203.0.113.0/24",
+            "198.51.100.50/32"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "DenyAllOther",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "execute-api:Invoke",
+      "Resource": "arn:aws:execute-api:ap-northeast-2:123456789012:abc123/*",
+      "Condition": {
+        "NotIpAddress": {
+          "aws:SourceIp": [
+            "203.0.113.0/24",
+            "198.51.100.50/32"
+          ]
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>VPC 엔드포인트 기반 접근 제어</h3>
+
+      <p>프라이빗 API를 VPC 내에서만 접근 가능하도록 설정할 수 있습니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>// VPC 엔드포인트를 통한 접근만 허용
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowVPCEndpoint",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "execute-api:Invoke",
+      "Resource": "arn:aws:execute-api:ap-northeast-2:123456789012:abc123/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:sourceVpce": "vpce-0123456789abcdef0"
+        }
+      }
+    }
+  ]
+}
+
+// 또는 특정 VPC에서만 접근 허용
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowVPC",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "execute-api:Invoke",
+      "Resource": "arn:aws:execute-api:ap-northeast-2:123456789012:abc123/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:sourceVpc": "vpc-0abc123def456"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>교차 계정 접근 허용</h3>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>// 다른 AWS 계정에서 API 호출 허용
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowCrossAccountAccess",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": [
+          "arn:aws:iam::987654321098:root",
+          "arn:aws:iam::987654321098:role/PartnerAPIRole"
+        ]
+      },
+      "Action": "execute-api:Invoke",
+      "Resource": "arn:aws:execute-api:ap-northeast-2:123456789012:abc123/prod/GET/products"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">팁: 리소스 정책 적용 시 주의사항</div>
+        <ul>
+          <li><strong>정책 평가 순서</strong>: 리소스 정책과 IAM 정책이 모두 존재하면, 둘 다 Allow해야 접근이 허용됩니다 (동일 계정). 교차 계정이면 리소스 정책의 Allow가 필수입니다.</li>
+          <li><strong>API 재배포 필요</strong>: 리소스 정책을 변경한 후 반드시 API를 재배포해야 적용됩니다.</li>
+          <li><strong>테스트 주의</strong>: 잘못된 Deny 정책을 적용하면 자신도 API에 접근할 수 없게 됩니다. 콘솔에서 직접 수정은 가능합니다.</li>
+          <li><strong>CloudWatch 로그</strong>: 리소스 정책으로 차단된 요청은 CloudWatch에 403 에러로 기록됩니다.</li>
+        </ul>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">Best Practice: ShopEasy API Gateway 보안 종합</div>
+        <table>
+          <thead>
+            <tr>
+              <th>보안 계층</th>
+              <th>적용 기능</th>
+              <th>목적</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>1. 네트워크 계층</td>
+              <td>리소스 정책 (IP/VPC)</td>
+              <td>허용된 네트워크에서만 접근</td>
+            </tr>
+            <tr>
+              <td>2. 웹 방화벽</td>
+              <td>WAF 규칙</td>
+              <td>SQL 인젝션, XSS 차단</td>
+            </tr>
+            <tr>
+              <td>3. 인증</td>
+              <td>Cognito / Lambda Authorizer</td>
+              <td>사용자 신원 확인</td>
+            </tr>
+            <tr>
+              <td>4. 사용량 제어</td>
+              <td>Usage Plan + API Key</td>
+              <td>과도한 사용 방지</td>
+            </tr>
+            <tr>
+              <td>5. 전송 암호화</td>
+              <td>TLS 1.2+</td>
+              <td>통신 데이터 보호</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <div class="chapter-nav">
+      <a href="14-cloudfront-security.html" class="prev">이전: CloudFront 보안</a>
+      <a href="16-lambda-security.html" class="next">다음: Lambda 보안</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/15-api-gateway-security.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>

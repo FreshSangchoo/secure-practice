@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/19-guardduty-securityhub.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GuardDuty &amp; Security Hub - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li class="sidebar-section">GuardDuty &amp; Security Hub</li>
+      <li><a href="#guardduty-concept">GuardDuty 개념 &amp; 활성화</a></li>
+      <li><a href="#finding-types">위협 탐지 유형</a></li>
+      <li><a href="#sample-findings">샘플 결과 생성 &amp; 분석</a></li>
+      <li><a href="#security-hub">Security Hub</a></li>
+      <li><a href="#security-standards">보안 표준</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 19</span>
+      <h1>GuardDuty &amp; Security Hub</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>GuardDuty의 역할과 지능형 위협 탐지 원리를 이해한다</li>
+          <li>주요 위협 탐지 유형(정찰, 자격증명 악용, 암호화폐 채굴 등)을 구분할 수 있다</li>
+          <li>GuardDuty 샘플 결과를 생성하고 분석하는 방법을 익힌다</li>
+          <li>Security Hub의 통합 보안 대시보드 개념을 이해한다</li>
+          <li>AWS 보안 표준(CIS, FSBP, PCI DSS)을 활성화하고 점수를 확인할 수 있다</li>
+          <li>ShopEasy 이커머스 환경에서 탐지-대응 체계를 구축할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- Section 1: GuardDuty 개념 & 활성화 -->
+    <!-- ============================================================ -->
+    <section class="content-section" id="guardduty-concept">
+      <h2>GuardDuty 개념 &amp; 활성화</h2>
+
+      <h3>GuardDuty란?</h3>
+      <p>Amazon GuardDuty는 AWS 계정과 워크로드를 보호하기 위한 <strong>지능형 위협 탐지 서비스</strong>입니다. 머신러닝, 이상 탐지, 통합 위협 인텔리전스를 사용하여 악의적인 활동과 비정상적인 행동을 자동으로 탐지합니다.</p>
+
+      <p>ShopEasy 이커머스 앱을 운영하면서, 외부 공격자가 AWS 계정에 침투하거나, EC2 인스턴스가 악성코드에 감염되거나, 자격증명이 유출되는 상황을 <strong>자동으로 감지</strong>하는 것이 GuardDuty의 역할입니다.</p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: AI 보안 경비원</div>
+        <p>ShopEasy 오프라인 매장에 일반 경비원을 배치하면, 매뉴얼에 있는 상황만 대응할 수 있습니다. 하지만 <strong>AI 보안 경비원</strong>을 배치하면 어떨까요?</p>
+        <ul>
+          <li><strong>CCTV 영상 분석</strong>으로 수상한 사람의 행동 패턴을 자동 감지합니다 (머신러닝)</li>
+          <li><strong>지명 수배 데이터베이스</strong>와 실시간 대조하여 위험 인물을 식별합니다 (위협 인텔리전스)</li>
+          <li><strong>평소와 다른 행동</strong>을 감지합니다 - 새벽 3시에 갑자기 많은 사람이 출입하는 것 등 (이상 탐지)</li>
+          <li>위험을 감지하면 <strong>즉시 알림</strong>을 보냅니다</li>
+        </ul>
+        <p>GuardDuty는 AWS 계정의 AI 보안 경비원입니다. <strong>활성화만 하면 바로 작동</strong>하며, 별도의 설정이나 규칙 작성이 필요 없습니다.</p>
+      </div>
+
+      <h3>데이터 소스</h3>
+      <p>GuardDuty는 다음 데이터 소스를 자동으로 분석합니다. 이 데이터를 직접 수집하거나 활성화할 필요가 없으며, GuardDuty 활성화 시 자동으로 수행됩니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>데이터 소스</th>
+            <th>분석 내용</th>
+            <th>탐지 예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>AWS CloudTrail 관리 이벤트</strong></td>
+            <td>AWS API 호출 패턴 분석</td>
+            <td>비정상적 시간대의 API 호출, 알 수 없는 IP에서의 콘솔 로그인</td>
+          </tr>
+          <tr>
+            <td><strong>AWS CloudTrail S3 데이터 이벤트</strong></td>
+            <td>S3 버킷 접근 패턴 분석</td>
+            <td>비정상적인 대량 데이터 다운로드, 익명 접근 시도</td>
+          </tr>
+          <tr>
+            <td><strong>VPC Flow Logs</strong></td>
+            <td>네트워크 트래픽 패턴 분석</td>
+            <td>포트 스캔, 알려진 악성 IP와의 통신, 비정상적 트래픽 급증</td>
+          </tr>
+          <tr>
+            <td><strong>DNS Logs</strong></td>
+            <td>DNS 쿼리 패턴 분석</td>
+            <td>악성 도메인 통신, C&amp;C 서버 통신, 암호화폐 마이닝 풀 접속</td>
+          </tr>
+          <tr>
+            <td><strong>EKS Audit Logs</strong></td>
+            <td>Kubernetes API 서버 로그 분석</td>
+            <td>비인가 컨테이너 실행, 권한 상승 시도</td>
+          </tr>
+          <tr>
+            <td><strong>Lambda 네트워크 활동</strong></td>
+            <td>Lambda 함수의 네트워크 활동 분석</td>
+            <td>Lambda 함수에서 악성 IP로의 통신</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="diagram">
+        <div class="diagram-title">GuardDuty 데이터 수집 및 분석 아키텍처</div>
+        <div class="diagram-row">
+          <div class="diagram-box detective">
+            <div class="box-title">CloudTrail Logs</div>
+            <div class="box-sub">API 호출 기록</div>
+          </div>
+          <div class="diagram-box network">
+            <div class="box-title">VPC Flow Logs</div>
+            <div class="box-sub">네트워크 트래픽</div>
+          </div>
+          <div class="diagram-box compute">
+            <div class="box-title">DNS Logs</div>
+            <div class="box-sub">DNS 쿼리</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-arrow down">&#x2193;</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box shield">
+            <div class="box-title">Amazon GuardDuty</div>
+            <div class="box-sub">머신러닝 + 위협 인텔리전스 + 이상 탐지</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-arrow down">&#x2193;</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box security">
+            <div class="box-title">위협 탐지 결과 (Findings)</div>
+            <div class="box-sub">심각도: Low / Medium / High</div>
+          </div>
+          <div class="diagram-arrow">&#x2192;</div>
+          <div class="diagram-box monitor">
+            <div class="box-title">EventBridge</div>
+            <div class="box-sub">알림 &amp; 자동 대응</div>
+          </div>
+          <div class="diagram-arrow">&#x2192;</div>
+          <div class="diagram-box serverless">
+            <div class="box-title">SNS / Lambda</div>
+            <div class="box-sub">이메일 알림 / 자동 수정</div>
+          </div>
+        </div>
+      </div>
+
+      <h3>머신러닝 기반 이상 탐지</h3>
+      <p>GuardDuty는 계정 활성화 후 <strong>약 2주간의 학습 기간</strong>을 거치면서 정상적인 동작 패턴(베이스라인)을 학습합니다. 이 기간 동안 계정의 정상적인 API 호출 패턴, 네트워크 트래픽 패턴, 사용자 행동 패턴을 분석합니다.</p>
+      <ul>
+        <li><strong>사용자 행동 분석:</strong> 사용자별 평소 작업 시간, 접속 IP, 사용하는 API를 학습</li>
+        <li><strong>네트워크 트래픽 분석:</strong> 정상적인 통신 대상, 데이터 전송량, 포트 사용 패턴 학습</li>
+        <li><strong>API 호출 분석:</strong> 정상적인 API 호출 빈도, 패턴, 오류율 학습</li>
+      </ul>
+
+      <div class="info-box tip">
+        <div class="info-box-title">학습 기간 동안의 오탐</div>
+        <p>GuardDuty 활성화 초기에는 베이스라인이 완전히 형성되지 않아 <strong>오탐(False Positive)</strong>이 발생할 수 있습니다. 이 기간 동안 발생하는 탐지 결과를 검토하고, 정상적인 활동인 경우 <strong>억제 규칙(Suppression Rule)</strong>을 설정하세요.</p>
+      </div>
+
+      <h3>비용 구조</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>과금 항목</th>
+            <th>기준</th>
+            <th>비고</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>CloudTrail 관리 이벤트 분석</strong></td>
+            <td>분석된 이벤트 수 (백만 건당)</td>
+            <td>첫 500만 이벤트/월은 할인 적용</td>
+          </tr>
+          <tr>
+            <td><strong>VPC Flow Logs 분석</strong></td>
+            <td>분석된 로그 데이터량 (GB당)</td>
+            <td>첫 500GB/월은 할인 적용</td>
+          </tr>
+          <tr>
+            <td><strong>DNS Logs 분석</strong></td>
+            <td>분석된 DNS 쿼리 수 (백만 건당)</td>
+            <td>-</td>
+          </tr>
+          <tr>
+            <td><strong>S3 데이터 이벤트 분석</strong></td>
+            <td>분석된 이벤트 수 (백만 건당)</td>
+            <td>S3 보호 기능 활성화 시</td>
+          </tr>
+          <tr>
+            <td><strong>30일 무료 평가판</strong></td>
+            <td>모든 기능 무료</td>
+            <td>예상 비용 확인 가능</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">ShopEasy GuardDuty 예상 비용</div>
+        <p>ShopEasy와 같은 소규모~중규모 환경에서 GuardDuty의 월간 비용은 보통 <strong>$5~$30</strong> 수준입니다. 30일 무료 평가판 기간 동안 실제 비용을 확인한 후 유지 여부를 결정하세요. 보안 위협 탐지의 가치를 고려하면 매우 합리적인 비용입니다.</p>
+      </div>
+
+      <!-- Lab: GuardDuty 활성화 -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: ShopEasy GuardDuty 활성화</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">GuardDuty 콘솔 이동</div>
+            <p>AWS Management Console에서 <strong>Amazon GuardDuty</strong> 서비스로 이동합니다.</p>
+            <p>아직 활성화되지 않았다면 <strong>"시작하기 (Get Started)"</strong> 버튼이 표시됩니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">GuardDuty 활성화</div>
+            <p><strong>"GuardDuty 활성화 (Enable GuardDuty)"</strong> 버튼을 클릭합니다.</p>
+            <p>활성화 즉시 30일 무료 평가판이 시작됩니다.</p>
+            <p>GuardDuty는 자동으로 CloudTrail, VPC Flow Logs, DNS Logs 분석을 시작합니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">보호 계획 확인</div>
+            <p>좌측 메뉴에서 <strong>설정 (Settings)</strong>을 클릭합니다.</p>
+            <p><strong>보호 계획</strong> 섹션에서 활성화된 데이터 소스를 확인합니다:</p>
+            <ul>
+              <li>CloudTrail 관리 이벤트: 활성화</li>
+              <li>S3 보호: 활성화 (권장)</li>
+              <li>EKS 보호: ShopEasy에서 EKS를 사용하는 경우 활성화</li>
+              <li>Malware Protection: EC2 인스턴스 악성코드 탐지 (권장)</li>
+              <li>Lambda 보호: ShopEasy Lambda 함수 보호 (권장)</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">예상 비용 확인</div>
+            <p>설정 페이지 하단에서 <strong>사용량 통계</strong>를 확인합니다.</p>
+            <p>각 데이터 소스별 분석량과 예상 비용을 확인할 수 있습니다.</p>
+            <p>30일 무료 평가판 기간 동안 비용이 청구되지 않습니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">신뢰할 수 있는 IP 목록 설정</div>
+            <p><strong>설정 &gt; 목록 (Lists)</strong>에서 신뢰할 수 있는 IP 목록을 추가합니다.</p>
+            <p>ShopEasy 사무실 IP, VPN IP 등을 등록하면 이 IP에서의 활동은 탐지 대상에서 제외됩니다.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 2: 위협 탐지 유형 -->
+    <!-- ============================================================ -->
+    <section class="content-section" id="finding-types">
+      <h2>위협 탐지 유형</h2>
+
+      <p>GuardDuty는 다양한 위협 유형을 탐지합니다. 각 탐지 결과(Finding)는 <code>ThreatPurpose:ResourceTypeAffected/ThreatFamilyName.DetectionMechanism!Artifact</code> 형식의 이름을 가집니다.</p>
+
+      <h3>Reconnaissance (정찰)</h3>
+      <p>공격자가 ShopEasy 인프라의 취약점을 찾기 위해 수행하는 탐색 활동입니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>탐지 유형</th>
+            <th>설명</th>
+            <th>ShopEasy 시나리오</th>
+            <th>심각도</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Recon:EC2/PortProbeUnprotectedPort</code></td>
+            <td>EC2 인스턴스의 보호되지 않은 포트가 외부에서 프로빙됨</td>
+            <td>ShopEasy API 서버의 3000번 포트가 외부에서 스캔됨</td>
+            <td>Low</td>
+          </tr>
+          <tr>
+            <td><code>Recon:EC2/Portscan</code></td>
+            <td>EC2 인스턴스가 다른 호스트에 포트 스캔을 수행</td>
+            <td>감염된 ShopEasy EC2가 내부 네트워크를 스캔</td>
+            <td>Medium</td>
+          </tr>
+          <tr>
+            <td><code>Recon:IAMUser/MaliciousIPCaller</code></td>
+            <td>알려진 악성 IP에서 IAM API를 호출</td>
+            <td>유출된 ShopEasy IAM 자격증명이 해커의 IP에서 사용됨</td>
+            <td>Medium</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Credential (자격증명 악용)</h3>
+      <p>유출되거나 탈취된 자격증명을 사용한 비인가 활동입니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>탐지 유형</th>
+            <th>설명</th>
+            <th>ShopEasy 시나리오</th>
+            <th>심각도</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>UnauthorizedAccess:IAMUser/InstanceCredentialExfiltration.OutsideAWS</code></td>
+            <td>EC2 인스턴스 프로파일 자격증명이 외부 IP에서 사용됨</td>
+            <td>ShopEasy EC2의 역할 자격증명이 유출되어 외부에서 S3에 접근</td>
+            <td>High</td>
+          </tr>
+          <tr>
+            <td><code>UnauthorizedAccess:IAMUser/ConsoleLoginSuccess.B</code></td>
+            <td>비정상적 위치에서 콘솔 로그인 성공</td>
+            <td>한국에서만 접속하던 ShopEasy 관리자 계정이 해외에서 로그인</td>
+            <td>Medium</td>
+          </tr>
+          <tr>
+            <td><code>UnauthorizedAccess:IAMUser/MaliciousIPCaller.Custom</code></td>
+            <td>사용자 정의 위협 IP 목록에 있는 IP에서 API 호출</td>
+            <td>블랙리스트에 등록된 IP에서 ShopEasy AWS 리소스에 접근 시도</td>
+            <td>Medium</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Crypto Mining (암호화폐 채굴)</h3>
+      <p>EC2 인스턴스 또는 컨테이너가 암호화폐 채굴에 악용되는 경우입니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>탐지 유형</th>
+            <th>설명</th>
+            <th>ShopEasy 시나리오</th>
+            <th>심각도</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>CryptoCurrency:EC2/BitcoinTool.B!DNS</code></td>
+            <td>EC2 인스턴스가 비트코인 관련 도메인으로 DNS 쿼리를 수행</td>
+            <td>해킹된 ShopEasy 서버에서 채굴 소프트웨어가 마이닝 풀에 접속</td>
+            <td>High</td>
+          </tr>
+          <tr>
+            <td><code>CryptoCurrency:EC2/BitcoinTool.B</code></td>
+            <td>EC2 인스턴스가 알려진 암호화폐 마이닝 네트워크와 통신</td>
+            <td>ShopEasy API 서버에서 비정상적 CPU 사용 + 마이닝 네트워크 통신</td>
+            <td>High</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box danger">
+        <div class="info-box-title">암호화폐 채굴 공격의 실제 피해</div>
+        <p>공격자가 ShopEasy EC2 인스턴스를 탈취하여 암호화폐를 채굴하면:</p>
+        <ul>
+          <li><strong>AWS 비용 폭탄:</strong> CPU를 100% 사용하므로 비용이 수십 배 증가</li>
+          <li><strong>서비스 성능 저하:</strong> ShopEasy 고객이 느린 응답 속도를 경험</li>
+          <li><strong>추가 공격 위험:</strong> 채굴 이후 데이터 유출 등 추가 공격으로 확대될 수 있음</li>
+        </ul>
+        <p>GuardDuty가 활성화되어 있다면, 채굴 시작 후 <strong>수 분 내에 탐지</strong>하여 즉시 대응할 수 있습니다.</p>
+      </div>
+
+      <h3>Backdoor (백도어)</h3>
+      <p>공격자가 설치한 백도어를 통해 C&C(Command and Control) 서버와 통신하는 경우입니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>탐지 유형</th>
+            <th>설명</th>
+            <th>ShopEasy 시나리오</th>
+            <th>심각도</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Backdoor:EC2/C&CActivity.B!DNS</code></td>
+            <td>EC2가 알려진 C&amp;C 서버 도메인으로 DNS 쿼리</td>
+            <td>감염된 ShopEasy 서버가 공격자의 C&amp;C 서버와 통신</td>
+            <td>High</td>
+          </tr>
+          <tr>
+            <td><code>Backdoor:EC2/DenialOfService.Tcp</code></td>
+            <td>EC2가 DDoS 공격에 참여 (TCP 트래픽 생성)</td>
+            <td>ShopEasy 서버가 봇넷에 편입되어 DDoS 공격 도구로 사용됨</td>
+            <td>High</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Trojan (트로이 목마)</h3>
+      <p>EC2 인스턴스에 설치된 트로이 목마 악성코드가 활동하는 경우입니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>탐지 유형</th>
+            <th>설명</th>
+            <th>ShopEasy 시나리오</th>
+            <th>심각도</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>Trojan:EC2/BlackholeTraffic</code></td>
+            <td>EC2가 블랙홀(알려진 악성) IP로 트래픽을 전송</td>
+            <td>ShopEasy 서버에서 고객 데이터를 외부로 유출하는 트래픽 발생</td>
+            <td>High</td>
+          </tr>
+          <tr>
+            <td><code>Trojan:EC2/DropPoint</code></td>
+            <td>EC2가 탈취된 자격증명이나 데이터의 드롭포인트로 사용됨</td>
+            <td>ShopEasy 서버가 다른 공격에서 탈취한 데이터의 중간 저장소로 악용</td>
+            <td>High</td>
+          </tr>
+          <tr>
+            <td><code>Trojan:EC2/DriveBySourceTraffic!DNS</code></td>
+            <td>EC2가 드라이브바이 다운로드 공격의 소스로 사용됨</td>
+            <td>ShopEasy 웹서버가 방문자에게 악성코드를 배포하는 것으로 사용됨</td>
+            <td>High</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>심각도 수준</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>심각도</th>
+            <th>수치 범위</th>
+            <th>의미</th>
+            <th>대응 시간</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="color: #F57F17;"><strong>Low (낮음)</strong></td>
+            <td>1.0 ~ 3.9</td>
+            <td>의심스러운 활동이지만 즉각적인 위험은 낮음</td>
+            <td>24시간 내 검토</td>
+          </tr>
+          <tr>
+            <td style="color: #E65100;"><strong>Medium (중간)</strong></td>
+            <td>4.0 ~ 6.9</td>
+            <td>정상 범위를 벗어난 활동, 주의 필요</td>
+            <td>수 시간 내 검토</td>
+          </tr>
+          <tr>
+            <td style="color: #B71C1C;"><strong>High (높음)</strong></td>
+            <td>7.0 ~ 8.9</td>
+            <td>심각한 위협, 리소스가 침해되었을 가능성 높음</td>
+            <td>즉시 대응 필요</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">심각도별 대응 전략</div>
+        <ul>
+          <li><strong>High:</strong> 즉시 조사 시작. 영향받은 리소스 격리 (보안그룹 변경). 인시던트 대응 팀에 알림.</li>
+          <li><strong>Medium:</strong> 비정상 활동 원인 파악. 자격증명 점검. 필요 시 키 교체.</li>
+          <li><strong>Low:</strong> 정기적 검토 시 확인. 패턴 분석. 정상 활동이면 억제 규칙 추가.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 3: 샘플 결과 생성 & 분석 -->
+    <!-- ============================================================ -->
+    <section class="content-section" id="sample-findings">
+      <h2>샘플 결과 생성 &amp; 분석</h2>
+
+      <p>GuardDuty를 활성화한 직후에는 탐지 결과가 없을 수 있습니다. <strong>샘플 결과(Sample Findings)</strong>를 생성하면, 다양한 위협 유형의 탐지 결과가 어떻게 표시되는지 미리 확인하고, 대응 프로세스를 테스트할 수 있습니다.</p>
+
+      <!-- Lab: GuardDuty 샘플 결과 생성 -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: GuardDuty 샘플 결과 생성 및 분석</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">샘플 결과 생성</div>
+            <p>GuardDuty 콘솔에서 좌측 메뉴의 <strong>설정 (Settings)</strong>을 클릭합니다.</p>
+            <p>페이지 하단의 <strong>"샘플 결과 생성 (Generate sample findings)"</strong> 버튼을 클릭합니다.</p>
+            <p>또는 AWS CLI로 생성할 수 있습니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># GuardDuty 디텍터 ID 확인
+aws guardduty list-detectors
+
+# 샘플 결과 생성
+aws guardduty create-sample-findings \
+  --detector-id YOUR_DETECTOR_ID \
+  --finding-types \
+    "CryptoCurrency:EC2/BitcoinTool.B!DNS" \
+    "UnauthorizedAccess:IAMUser/ConsoleLoginSuccess.B" \
+    "Recon:EC2/PortProbeUnprotectedPort" \
+    "Backdoor:EC2/C&CActivity.B!DNS" \
+    "Trojan:EC2/BlackholeTraffic"</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">결과 목록 확인</div>
+            <p>좌측 메뉴에서 <strong>결과 (Findings)</strong>를 클릭합니다.</p>
+            <p>생성된 샘플 결과 목록이 심각도순으로 표시됩니다.</p>
+            <p>각 결과에는 <strong>[SAMPLE]</strong> 태그가 붙어 실제 위협이 아님을 나타냅니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">High 심각도 결과 분석</div>
+            <p><strong>CryptoCurrency:EC2/BitcoinTool.B!DNS</strong> (High) 결과를 클릭합니다.</p>
+            <p>결과 상세 정보를 확인합니다:</p>
+            <ul>
+              <li><strong>영향받은 리소스:</strong> EC2 인스턴스 ID, 보안그룹</li>
+              <li><strong>행위:</strong> 암호화폐 마이닝 풀 도메인으로 DNS 쿼리</li>
+              <li><strong>액터:</strong> 원격 IP 주소, 국가 정보</li>
+              <li><strong>탐지 시간:</strong> 이벤트 발생 시각</li>
+              <li><strong>추가 정보:</strong> 위협 인텔리전스 소스</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">JSON 형식 결과 확인</div>
+            <p>결과 상세 페이지에서 <strong>JSON</strong> 탭을 클릭하여 원본 데이터를 확인합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">json</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>{
+  "SchemaVersion": "2.0",
+  "AccountId": "123456789012",
+  "Region": "ap-northeast-2",
+  "Id": "sample-finding-id-123",
+  "Type": "CryptoCurrency:EC2/BitcoinTool.B!DNS",
+  "Severity": 8,
+  "Title": "EC2 instance i-0abc123def is querying a domain name associated with Bitcoin-related activity.",
+  "Description": "EC2 instance i-0abc123def is querying a domain name that is associated with Bitcoin-related activity.",
+  "Resource": {
+    "ResourceType": "Instance",
+    "InstanceDetails": {
+      "InstanceId": "i-0abc123def",
+      "InstanceType": "t3.medium",
+      "LaunchTime": "2024-01-10T08:00:00Z",
+      "Tags": [
+        { "Key": "Name", "Value": "ShopEasy-API-Server" },
+        { "Key": "Environment", "Value": "Production" }
+      ],
+      "NetworkInterfaces": [{
+        "PrivateIpAddress": "10.0.1.50",
+        "PublicIp": "54.180.xxx.xxx",
+        "SecurityGroups": [
+          { "GroupId": "sg-0abc123", "GroupName": "shopeasy-api-sg" }
+        ]
+      }]
+    }
+  },
+  "Service": {
+    "Action": {
+      "ActionType": "DNS_REQUEST",
+      "DnsRequestAction": {
+        "Domain": "pool.minergate.com",
+        "Protocol": "UDP"
+      }
+    },
+    "Evidence": {
+      "ThreatIntelligenceDetails": [{
+        "ThreatListName": "ProofPoint",
+        "ThreatNames": ["CryptoCurrency"]
+      }]
+    },
+    "Count": 47,
+    "FirstSeen": "2024-01-15T03:00:00Z",
+    "LastSeen": "2024-01-15T09:30:00Z"
+  }
+}</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">대응 절차 연습</div>
+            <p>이 샘플 결과를 실제 위협이라고 가정하고 대응 절차를 연습합니다:</p>
+            <ol>
+              <li><strong>격리:</strong> 해당 EC2 인스턴스의 보안그룹을 변경하여 모든 아웃바운드 트래픽 차단</li>
+              <li><strong>증거 수집:</strong> EC2 인스턴스의 EBS 스냅샷 생성 (포렌식용)</li>
+              <li><strong>조사:</strong> CloudTrail에서 해당 인스턴스 관련 이벤트 조사</li>
+              <li><strong>수정:</strong> 인스턴스 종료 후 깨끗한 AMI에서 재생성</li>
+              <li><strong>예방:</strong> 침입 경로 파악 및 보안 강화</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+
+      <h3>결과 아카이브 &amp; 억제 규칙</h3>
+
+      <h4>결과 아카이브</h4>
+      <p>검토가 완료된 탐지 결과는 <strong>아카이브(Archive)</strong>할 수 있습니다. 아카이브된 결과는 현재 결과 목록에서 사라지지만, 필터를 통해 언제든 다시 조회할 수 있습니다.</p>
+
+      <h4>억제 규칙 (Suppression Rules)</h4>
+      <p>특정 패턴의 탐지 결과가 <strong>오탐(False Positive)</strong>으로 확인된 경우, 억제 규칙을 설정하여 해당 패턴의 결과를 자동으로 아카이브할 수 있습니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>// 억제 규칙 예시: 특정 IP에서의 포트 프로빙 무시
+{
+  "Criterion": {
+    "type": {
+      "Eq": ["Recon:EC2/PortProbeUnprotectedPort"]
+    },
+    "service.action.portProbeAction.remoteIpDetails.ipAddressV4": {
+      "Eq": ["203.0.113.50"]  // ShopEasy 모니터링 서버 IP
+    }
+  },
+  "Name": "ShopEasy-MonitoringServer-PortProbe",
+  "Description": "ShopEasy 모니터링 서버에서의 정상적인 포트 체크를 무시"
+}</code></pre>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">억제 규칙 설정 시 주의</div>
+        <p>억제 규칙을 너무 광범위하게 설정하면 실제 위협을 놓칠 수 있습니다. 항상 <strong>가능한 한 좁은 범위</strong>로 설정하고, 정기적으로 억제된 결과를 검토하세요.</p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 4: Security Hub -->
+    <!-- ============================================================ -->
+    <section class="content-section" id="security-hub">
+      <h2>Security Hub</h2>
+
+      <h3>Security Hub란?</h3>
+      <p>AWS Security Hub는 AWS 계정의 <strong>보안 상태를 통합적으로 관리하는 대시보드</strong>입니다. GuardDuty, AWS Config, Amazon Inspector, Amazon Macie 등 다양한 AWS 보안 서비스의 결과를 하나의 화면에서 확인하고, 보안 표준에 따라 <strong>보안 점수(Security Score)</strong>를 제공합니다.</p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 통합 보안 관제 센터</div>
+        <p>대형 건물에는 각 층에 CCTV, 화재 경보기, 출입 통제 시스템 등 다양한 보안 장비가 있습니다. 이 모든 장비의 정보를 <strong>하나의 관제 센터</strong>에서 통합 모니터링하면, 전체 건물의 보안 상태를 한눈에 파악할 수 있습니다.</p>
+        <p>Security Hub는 AWS 계정의 통합 보안 관제 센터입니다:</p>
+        <ul>
+          <li><strong>CCTV (GuardDuty):</strong> 실시간 위협 탐지 결과</li>
+          <li><strong>건물 점검 (AWS Config):</strong> 리소스 규정 준수 상태</li>
+          <li><strong>안전 진단 (Inspector):</strong> EC2/Lambda 취약점 스캔 결과</li>
+          <li><strong>금고 관리 (Macie):</strong> S3의 민감한 데이터 탐지 결과</li>
+          <li><strong>관제 센터 대시보드 (Security Hub):</strong> 모든 결과의 통합 대시보드 + 보안 점수</li>
+        </ul>
+      </div>
+
+      <h3>보안 점수 (Security Score)</h3>
+      <p>Security Hub는 활성화된 보안 표준의 점검 항목 중 <strong>통과한 항목의 비율</strong>을 보안 점수로 표시합니다.</p>
+
+      <div class="diagram">
+        <div class="diagram-title">ShopEasy Security Hub 보안 점수 (예시)</div>
+        <div class="diagram-row">
+          <div class="diagram-box shield">
+            <div class="box-title">전체 보안 점수</div>
+            <div class="box-sub">72% (목표: 90%+)</div>
+          </div>
+          <div class="diagram-box storage">
+            <div class="box-title">FSBP</div>
+            <div class="box-sub">68% (45/66 통과)</div>
+          </div>
+          <div class="diagram-box security">
+            <div class="box-title">CIS v1.4</div>
+            <div class="box-sub">75% (33/44 통과)</div>
+          </div>
+        </div>
+      </div>
+
+      <h3>통합 서비스</h3>
+      <p>Security Hub는 다음 AWS 서비스 및 서드파티 솔루션과 통합됩니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>통합 서비스</th>
+            <th>전송 정보</th>
+            <th>ShopEasy 활용</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Amazon GuardDuty</strong></td>
+            <td>위협 탐지 결과 (Findings)</td>
+            <td>실시간 위협 탐지 결과를 통합 대시보드에서 확인</td>
+          </tr>
+          <tr>
+            <td><strong>AWS Config</strong></td>
+            <td>규정 준수 평가 결과</td>
+            <td>Config 규칙 준수/비준수 상태를 통합 조회</td>
+          </tr>
+          <tr>
+            <td><strong>Amazon Inspector</strong></td>
+            <td>취약점 스캔 결과</td>
+            <td>EC2, Lambda 함수의 알려진 취약점(CVE) 확인</td>
+          </tr>
+          <tr>
+            <td><strong>Amazon Macie</strong></td>
+            <td>민감 데이터 탐지 결과</td>
+            <td>S3에 저장된 고객 개인정보, 카드 정보 탐지</td>
+          </tr>
+          <tr>
+            <td><strong>AWS Firewall Manager</strong></td>
+            <td>WAF, Shield 정책 준수 상태</td>
+            <td>WAF 규칙과 Shield 보호 상태 확인</td>
+          </tr>
+          <tr>
+            <td><strong>IAM Access Analyzer</strong></td>
+            <td>외부 접근 가능 리소스 탐지</td>
+            <td>외부에서 접근 가능한 S3 버킷, IAM 역할 탐지</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="diagram">
+        <div class="diagram-title">Security Hub 통합 아키텍처</div>
+        <div class="diagram-row">
+          <div class="diagram-box detective">
+            <div class="box-title">GuardDuty</div>
+            <div class="box-sub">위협 탐지</div>
+          </div>
+          <div class="diagram-box security">
+            <div class="box-title">Config</div>
+            <div class="box-sub">규정 준수</div>
+          </div>
+          <div class="diagram-box compute">
+            <div class="box-title">Inspector</div>
+            <div class="box-sub">취약점 스캔</div>
+          </div>
+          <div class="diagram-box storage">
+            <div class="box-title">Macie</div>
+            <div class="box-sub">데이터 분류</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-arrow down">&#x2193;</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box shield">
+            <div class="box-title">AWS Security Hub</div>
+            <div class="box-sub">통합 대시보드 + 보안 점수 + 자동화 규칙</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-arrow down">&#x2193;</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box monitor">
+            <div class="box-title">EventBridge</div>
+            <div class="box-sub">자동 대응</div>
+          </div>
+          <div class="diagram-box serverless">
+            <div class="box-title">Lambda</div>
+            <div class="box-sub">자동 수정</div>
+          </div>
+          <div class="diagram-box network">
+            <div class="box-title">SNS</div>
+            <div class="box-sub">알림</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lab: Security Hub 활성화 -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: ShopEasy Security Hub 활성화</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">Security Hub 콘솔 이동</div>
+            <p>AWS Management Console에서 <strong>AWS Security Hub</strong> 서비스로 이동합니다.</p>
+            <p><strong>"Security Hub로 이동 (Go to Security Hub)"</strong> 버튼을 클릭합니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">보안 표준 선택</div>
+            <p>Security Hub 활성화 화면에서 사용할 <strong>보안 표준</strong>을 선택합니다:</p>
+            <ul>
+              <li><strong>AWS Foundational Security Best Practices v1.0.0:</strong> 활성화 (권장)</li>
+              <li><strong>CIS AWS Foundations Benchmark v1.4.0:</strong> 활성화 (권장)</li>
+              <li><strong>PCI DSS v3.2.1:</strong> 결제 처리 환경에서 활성화</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Security Hub 활성화</div>
+            <p><strong>"Security Hub 활성화 (Enable Security Hub)"</strong> 버튼을 클릭합니다.</p>
+            <p>Security Hub가 활성화되면 자동으로 AWS Config와 연동되어 보안 점검을 시작합니다.</p>
+            <div class="info-box warning">
+              <div class="info-box-title">사전 요구사항: AWS Config</div>
+              <p>Security Hub가 보안 표준을 점검하려면 <strong>AWS Config가 먼저 활성화</strong>되어 있어야 합니다. Config가 비활성화 상태면 Security Hub의 많은 점검 항목이 작동하지 않습니다. 앞 장에서 Config를 이미 설정했다면 문제 없습니다.</p>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">통합 서비스 확인</div>
+            <p>좌측 메뉴에서 <strong>통합 (Integrations)</strong>을 클릭합니다.</p>
+            <p>GuardDuty, Config 등이 이미 통합되어 있는지 확인합니다.</p>
+            <p>아직 GuardDuty가 활성화되지 않았다면, 이전 섹션에서 활성화한 후 통합 상태를 확인합니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">보안 점수 확인</div>
+            <p>Security Hub 대시보드에서 <strong>보안 점수</strong>를 확인합니다.</p>
+            <p>처음에는 점검이 진행 중이므로 점수가 표시되기까지 몇 시간이 걸릴 수 있습니다.</p>
+            <p>24시간 후에 다시 확인하면 전체 보안 점수와 각 표준별 점수를 볼 수 있습니다.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 5: 보안 표준 -->
+    <!-- ============================================================ -->
+    <section class="content-section" id="security-standards">
+      <h2>보안 표준</h2>
+
+      <p>Security Hub는 여러 보안 표준에 따라 AWS 계정의 보안 상태를 자동으로 점검합니다. 각 표준에는 수십 개의 점검 항목(Controls)이 포함되어 있으며, 리소스가 각 항목을 통과하는지 자동으로 평가합니다.</p>
+
+      <h3>AWS Foundational Security Best Practices (FSBP)</h3>
+      <p>AWS가 자체적으로 정의한 보안 모범 사례입니다. AWS 서비스별로 구성되어 있어 가장 포괄적이고 실용적인 표준입니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>카테고리</th>
+            <th>주요 점검 항목 예시</th>
+            <th>ShopEasy 관련성</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>IAM</strong></td>
+            <td>루트 계정 MFA 활성화, 액세스 키 90일 교체, 미사용 자격증명 비활성화</td>
+            <td>운영팀 계정 보안</td>
+          </tr>
+          <tr>
+            <td><strong>S3</strong></td>
+            <td>퍼블릭 접근 차단, 버전 관리 활성화, SSL/TLS 강제, 서버 측 암호화</td>
+            <td>고객 데이터 보호</td>
+          </tr>
+          <tr>
+            <td><strong>EC2</strong></td>
+            <td>EBS 기본 암호화, 보안그룹 관리 포트 제한, IMDSv2 적용</td>
+            <td>API 서버 보안</td>
+          </tr>
+          <tr>
+            <td><strong>RDS</strong></td>
+            <td>퍼블릭 접근 비활성화, 스토리지 암호화, 자동 백업 활성화</td>
+            <td>데이터베이스 보안</td>
+          </tr>
+          <tr>
+            <td><strong>Lambda</strong></td>
+            <td>퍼블릭 접근 금지, 최신 런타임 사용, VPC 내 배포</td>
+            <td>서버리스 함수 보안</td>
+          </tr>
+          <tr>
+            <td><strong>CloudTrail</strong></td>
+            <td>트레일 활성화, 로그 암호화, 로그 무결성 검증</td>
+            <td>감사 추적 보장</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>CIS AWS Foundations Benchmark</h3>
+      <p>Center for Internet Security(CIS)에서 발행하는 AWS 보안 벤치마크입니다. 국제적으로 인정받는 보안 표준이며, 많은 기업이 이 벤치마크를 기준으로 보안 감사를 수행합니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>섹션</th>
+            <th>주요 점검 항목</th>
+            <th>ShopEasy 예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>1. IAM</strong></td>
+            <td>루트 계정 사용 제한, MFA 활성화, 비밀번호 정책 강화, 액세스 키 관리</td>
+            <td>ShopEasy 관리자 MFA 필수, 90일마다 비밀번호 변경</td>
+          </tr>
+          <tr>
+            <td><strong>2. Storage</strong></td>
+            <td>S3 퍼블릭 접근 차단, EBS 암호화, RDS 암호화</td>
+            <td>ShopEasy 데이터 저장소 전체 암호화</td>
+          </tr>
+          <tr>
+            <td><strong>3. Logging</strong></td>
+            <td>CloudTrail 모든 리전 활성화, Config 활성화, VPC Flow Logs 활성화</td>
+            <td>ShopEasy 계정 전체 로깅 활성화</td>
+          </tr>
+          <tr>
+            <td><strong>4. Monitoring</strong></td>
+            <td>루트 로그인 알림, IAM 변경 알림, 보안그룹 변경 알림, CloudTrail 변경 알림</td>
+            <td>Chapter 17에서 설정한 CloudWatch 알림과 동일</td>
+          </tr>
+          <tr>
+            <td><strong>5. Networking</strong></td>
+            <td>기본 VPC 미사용, 0.0.0.0/0 인바운드 제한, VPC 피어링 관리</td>
+            <td>ShopEasy VPC 네트워크 보안</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>PCI DSS</h3>
+      <p>Payment Card Industry Data Security Standard(PCI DSS)는 <strong>결제 카드 데이터를 처리하는 환경</strong>에 적용되는 보안 표준입니다. ShopEasy가 직접 카드 결제를 처리하는 경우 이 표준을 준수해야 합니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>PCI DSS 요구사항</th>
+            <th>Security Hub 점검 항목</th>
+            <th>ShopEasy 적용</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>1. 네트워크 보안</strong></td>
+            <td>보안그룹 규칙 점검, VPC 설정 점검</td>
+            <td>결제 서버 네트워크 격리</td>
+          </tr>
+          <tr>
+            <td><strong>3. 저장 데이터 보호</strong></td>
+            <td>EBS/RDS/S3 암호화 점검</td>
+            <td>카드 정보 저장 암호화</td>
+          </tr>
+          <tr>
+            <td><strong>4. 전송 데이터 보호</strong></td>
+            <td>HTTPS 강제, SSL/TLS 점검</td>
+            <td>결제 데이터 전송 암호화</td>
+          </tr>
+          <tr>
+            <td><strong>7. 접근 제어</strong></td>
+            <td>IAM 정책 점검, 최소 권한 원칙</td>
+            <td>결제 시스템 접근 최소화</td>
+          </tr>
+          <tr>
+            <td><strong>8. 인증 관리</strong></td>
+            <td>MFA 활성화, 비밀번호 정책 점검</td>
+            <td>결제 시스템 관리자 강력한 인증</td>
+          </tr>
+          <tr>
+            <td><strong>10. 감사 추적</strong></td>
+            <td>CloudTrail 활성화, 로그 보관 점검</td>
+            <td>결제 관련 모든 활동 기록</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box tip">
+        <div class="info-box-title">ShopEasy에서 PCI DSS가 필요한가?</div>
+        <p>ShopEasy가 <strong>Stripe, PG사(토스페이먼츠 등)와 같은 결제 대행 서비스</strong>를 사용하여 카드 정보를 직접 처리하지 않는다면, PCI DSS 전체 준수는 필요하지 않을 수 있습니다. 하지만 결제 관련 보안 모범 사례로서 참고할 가치가 있습니다.</p>
+      </div>
+
+      <!-- Lab: 보안 표준 활성화 및 점수 확인 -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: 보안 표준 활성화 및 점수 확인</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">보안 표준 확인</div>
+            <p>Security Hub 콘솔에서 좌측 메뉴의 <strong>보안 표준 (Security standards)</strong>을 클릭합니다.</p>
+            <p>활성화된 표준 목록과 각 표준의 현재 보안 점수를 확인합니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">FSBP 점검 결과 상세 확인</div>
+            <p><strong>AWS Foundational Security Best Practices</strong>를 클릭합니다.</p>
+            <p>점검 항목 목록에서 각 항목의 상태를 확인합니다:</p>
+            <ul>
+              <li><strong style="color: #2E7D32;">PASSED (통과):</strong> 해당 항목을 준수함</li>
+              <li><strong style="color: #B71C1C;">FAILED (실패):</strong> 해당 항목을 위반함 - 조치 필요</li>
+              <li><strong style="color: #F57F17;">WARNING (경고):</strong> 일부 리소스가 점검되지 않음</li>
+              <li><strong>NOT AVAILABLE:</strong> 점검에 필요한 데이터가 없음</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">실패 항목 분석</div>
+            <p><strong>FAILED</strong> 상태의 항목을 클릭하여 상세 내용을 확인합니다.</p>
+            <p>각 항목에 대해 다음 정보를 확인할 수 있습니다:</p>
+            <ul>
+              <li><strong>설명:</strong> 이 점검이 왜 중요한지</li>
+              <li><strong>수정 방법:</strong> 비준수 상태를 해결하는 방법</li>
+              <li><strong>영향받은 리소스:</strong> 비준수 리소스 목록</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">CIS Benchmark 활성화 (미활성화 시)</div>
+            <p>CIS AWS Foundations Benchmark가 비활성화 상태라면:</p>
+            <ul>
+              <li>보안 표준 페이지에서 CIS 벤치마크를 찾습니다</li>
+              <li><strong>"활성화 (Enable)"</strong> 버튼을 클릭합니다</li>
+              <li>점검이 시작되며, 결과가 나오기까지 몇 시간이 소요됩니다</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">통합 결과 확인</div>
+            <p>좌측 메뉴에서 <strong>결과 (Findings)</strong>를 클릭합니다.</p>
+            <p>GuardDuty, Config, Inspector 등 다양한 소스의 결과가 <strong>하나의 목록</strong>에 통합되어 표시됩니다.</p>
+            <p>필터를 사용하여 특정 서비스, 심각도, 상태별로 결과를 필터링합니다:</p>
+            <ul>
+              <li><strong>심각도 = CRITICAL:</strong> 즉시 조치가 필요한 항목</li>
+              <li><strong>소스 = GuardDuty:</strong> 실시간 위협 탐지 결과</li>
+              <li><strong>상태 = FAILED:</strong> 보안 표준 위반 항목</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">전체 보안 현황 대시보드 확인</div>
+            <p>좌측 메뉴에서 <strong>요약 (Summary)</strong>을 클릭합니다.</p>
+            <p>ShopEasy AWS 환경의 전체 보안 현황을 확인합니다:</p>
+            <ul>
+              <li><strong>전체 보안 점수:</strong> 목표 90% 이상</li>
+              <li><strong>심각도별 결과 수:</strong> Critical, High, Medium, Low</li>
+              <li><strong>새로운 결과:</strong> 최근 발견된 보안 이슈</li>
+              <li><strong>가장 많이 위반된 항목:</strong> 우선적으로 해결해야 할 항목</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">ShopEasy 보안 점수 개선 로드맵</div>
+        <p>보안 점수를 단기간에 100%로 만드는 것은 현실적이지 않습니다. 다음 단계별로 점진적으로 개선하세요:</p>
+        <ul>
+          <li><strong>1단계 (1주차):</strong> CRITICAL 심각도 항목 모두 해결 → 점수 80% 목표</li>
+          <li><strong>2단계 (2-3주차):</strong> HIGH 심각도 항목 해결 → 점수 85% 목표</li>
+          <li><strong>3단계 (1개월):</strong> MEDIUM 심각도 항목 해결 → 점수 90% 목표</li>
+          <li><strong>4단계 (지속):</strong> LOW 심각도 항목 검토 및 지속적 개선</li>
+        </ul>
+        <p>해결할 수 없는 항목(아키텍처 제약 등)은 <strong>"억제(Suppressed)"</strong> 처리하고, 사유를 문서화합니다.</p>
+      </div>
+
+      <h3>Security Hub 자동화 규칙</h3>
+      <p>Security Hub의 <strong>자동화 규칙(Automation Rules)</strong>을 사용하면, 특정 조건의 결과에 대해 자동으로 작업을 수행할 수 있습니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>// Security Hub 자동화 규칙 예시
+// GuardDuty High 심각도 결과 발견 시 즉시 SNS 알림
+// EventBridge 규칙 패턴:
+{
+  "source": ["aws.securityhub"],
+  "detail-type": ["Security Hub Findings - Imported"],
+  "detail": {
+    "findings": {
+      "Severity": {
+        "Label": ["CRITICAL", "HIGH"]
+      },
+      "Workflow": {
+        "Status": ["NEW"]
+      },
+      "ProductName": ["GuardDuty"]
+    }
+  }
+}</code></pre>
+      </div>
+
+      <div class="info-box concept">
+        <div class="info-box-title">ShopEasy 보안 모니터링 체계 전체 구성</div>
+        <p>Chapter 17~19에서 구축한 ShopEasy 보안 모니터링 체계를 정리하면:</p>
+        <table>
+          <thead>
+            <tr>
+              <th>서비스</th>
+              <th>역할</th>
+              <th>질문에 답변</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>CloudTrail</strong></td>
+              <td>API 호출 기록</td>
+              <td>"누가, 언제, 무엇을 했는가?"</td>
+            </tr>
+            <tr>
+              <td><strong>AWS Config</strong></td>
+              <td>리소스 상태 추적 &amp; 규정 준수 평가</td>
+              <td>"리소스가 현재 안전한 상태인가?"</td>
+            </tr>
+            <tr>
+              <td><strong>GuardDuty</strong></td>
+              <td>지능형 위협 탐지</td>
+              <td>"지금 공격을 받고 있는가?"</td>
+            </tr>
+            <tr>
+              <td><strong>Security Hub</strong></td>
+              <td>통합 대시보드 &amp; 보안 점수</td>
+              <td>"전체적으로 보안 수준은 어떠한가?"</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>이 네 가지 서비스를 함께 사용하면 ShopEasy의 <strong>탐지(Detect) → 분석(Analyze) → 대응(Respond)</strong> 보안 사이클이 완성됩니다.</p>
+      </div>
+    </section>
+
+    <!-- Chapter Navigation -->
+    <div class="chapter-nav">
+      <a href="18-aws-config.html" class="prev">이전: AWS Config</a>
+      <a href="20-incident-response.html" class="next">다음: 보안 사고 대응 자동화</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/19-guardduty-securityhub.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>

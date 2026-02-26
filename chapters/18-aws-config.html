@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/18-aws-config.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AWS Config - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li class="sidebar-section">AWS Config</li>
+      <li><a href="#config-concept">Config 개념</a></li>
+      <li><a href="#managed-rules">관리형 규칙</a></li>
+      <li><a href="#conformance-pack">적합성 팩</a></li>
+      <li><a href="#compliance-dashboard">비준수 리소스 대시보드</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 18</span>
+      <h1>AWS Config</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>AWS Config의 역할과 리소스 구성 변경 추적의 중요성을 이해한다</li>
+          <li>CloudTrail과 Config의 차이점을 명확히 설명할 수 있다</li>
+          <li>주요 보안 관련 관리형 규칙을 이해하고 활성화할 수 있다</li>
+          <li>적합성 팩(Conformance Pack)을 사용하여 규정 준수를 관리할 수 있다</li>
+          <li>비준수 리소스를 식별하고 자동 수정(Remediation)을 설정할 수 있다</li>
+          <li>ShopEasy 이커머스 환경에 맞는 Config 규칙을 구성할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- Section 1: Config 개념 -->
+    <!-- ============================================================ -->
+    <section class="content-section" id="config-concept">
+      <h2>Config 개념</h2>
+
+      <h3>AWS Config란?</h3>
+      <p>AWS Config는 AWS 리소스의 <strong>구성 변경을 지속적으로 추적하고 기록</strong>하는 서비스입니다. EC2 인스턴스, 보안그룹, S3 버킷, IAM 정책 등 모든 AWS 리소스의 현재 상태와 과거 상태를 확인할 수 있으며, <strong>정의된 규칙에 따라 리소스가 규정을 준수하는지 자동으로 평가</strong>합니다.</p>
+
+      <p>ShopEasy 이커머스 앱을 운영하면서, "S3 버킷이 퍼블릭으로 설정된 적이 있는가?", "보안그룹에 SSH가 전체 공개되어 있지는 않은가?", "EBS 볼륨이 암호화되어 있는가?" 같은 질문에 대해 Config가 자동으로 답변을 제공합니다.</p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 리소스의 건강 검진 기록</div>
+        <p>사람이 정기적으로 건강 검진을 받으면, 혈압, 혈당, 콜레스테롤 등의 수치를 기록하고, 정상 범위를 벗어나면 경고를 받습니다. 또한 과거 기록을 통해 건강 상태의 변화를 추적할 수 있습니다.</p>
+        <p><strong>AWS Config는 AWS 리소스의 건강 검진 시스템</strong>입니다:</p>
+        <ul>
+          <li><strong>건강 검진 항목</strong> = Config 규칙 (s3-bucket-public-read-prohibited, encrypted-volumes 등)</li>
+          <li><strong>검진 결과</strong> = 준수(Compliant) / 비준수(Non-Compliant)</li>
+          <li><strong>검진 기록</strong> = 구성 항목(Configuration Item) 타임라인</li>
+          <li><strong>정상 범위</strong> = 규칙에서 정의한 기준값</li>
+          <li><strong>의사의 처방</strong> = 자동 수정(Remediation)</li>
+        </ul>
+      </div>
+
+      <h3>CloudTrail vs Config 차이</h3>
+      <p>CloudTrail과 Config는 서로 보완적인 서비스이지만, 기록하는 대상과 관점이 다릅니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>항목</th>
+            <th>CloudTrail</th>
+            <th>AWS Config</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>기록 대상</strong></td>
+            <td>API 호출 (누가 무엇을 했는가)</td>
+            <td>리소스 구성 상태 (리소스가 어떤 상태인가)</td>
+          </tr>
+          <tr>
+            <td><strong>관점</strong></td>
+            <td>행위 중심 (Activity-based)</td>
+            <td>상태 중심 (State-based)</td>
+          </tr>
+          <tr>
+            <td><strong>질문 예시</strong></td>
+            <td>"누가 보안그룹을 변경했는가?"</td>
+            <td>"보안그룹이 현재 어떤 규칙을 가지고 있는가?"</td>
+          </tr>
+          <tr>
+            <td><strong>ShopEasy 예시</strong></td>
+            <td>shopeasy-admin이 10:30에 보안그룹에 SSH 규칙을 추가함</td>
+            <td>보안그룹 sg-abc123의 인바운드 규칙에 0.0.0.0/0:22가 포함되어 비준수 상태</td>
+          </tr>
+          <tr>
+            <td><strong>규정 준수 평가</strong></td>
+            <td>불가 (로그 분석 필요)</td>
+            <td>자동 평가 (규칙 기반)</td>
+          </tr>
+          <tr>
+            <td><strong>자동 수정</strong></td>
+            <td>불가 (EventBridge 연동 필요)</td>
+            <td>내장 자동 수정 기능</td>
+          </tr>
+          <tr>
+            <td><strong>비유</strong></td>
+            <td>CCTV 녹화 (행동 기록)</td>
+            <td>건강 검진 기록 (상태 기록)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">CloudTrail + Config = 완전한 보안 가시성</div>
+        <p>ShopEasy에서 보안 사고가 발생했을 때:</p>
+        <ul>
+          <li><strong>Config</strong>로 "현재 어떤 리소스가 비준수 상태인지" 확인합니다</li>
+          <li><strong>Config 타임라인</strong>으로 "리소스 상태가 언제 변경되었는지" 확인합니다</li>
+          <li><strong>CloudTrail</strong>로 "누가 그 변경을 수행했는지" 추적합니다</li>
+        </ul>
+        <p>두 서비스를 함께 사용해야 <strong>완전한 보안 가시성</strong>을 확보할 수 있습니다.</p>
+      </div>
+
+      <h3>구성 항목(Configuration Item) 개념</h3>
+      <p>AWS Config는 리소스의 구성 변경이 발생할 때마다 <strong>구성 항목(Configuration Item, CI)</strong>을 생성합니다. CI는 특정 시점에서의 리소스 구성 스냅샷입니다.</p>
+
+      <p>구성 항목에 포함되는 정보:</p>
+      <ul>
+        <li><strong>메타데이터:</strong> CI 버전, 캡처 시간</li>
+        <li><strong>속성:</strong> 리소스 ID, 유형, ARN, 가용 영역</li>
+        <li><strong>관계:</strong> 연관된 다른 리소스 (예: EC2 인스턴스 ↔ 보안그룹)</li>
+        <li><strong>현재 구성:</strong> 리소스의 실제 설정 값 (JSON)</li>
+        <li><strong>관련 이벤트:</strong> CloudTrail 이벤트 ID (변경을 일으킨 API 호출)</li>
+      </ul>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "configurationItem": {
+    "version": "1.3",
+    "accountId": "123456789012",
+    "configurationItemCaptureTime": "2024-01-15T10:30:00.000Z",
+    "configurationItemStatus": "ResourceDiscovered",
+    "resourceType": "AWS::EC2::SecurityGroup",
+    "resourceId": "sg-0abc123def456",
+    "resourceName": "shopeasy-api-sg",
+    "awsRegion": "ap-northeast-2",
+    "relationships": [
+      {
+        "resourceType": "AWS::EC2::Instance",
+        "resourceId": "i-0abc123def456",
+        "name": "Is associated with Instance"
+      },
+      {
+        "resourceType": "AWS::EC2::VPC",
+        "resourceId": "vpc-0abc123",
+        "name": "Is contained in Vpc"
+      }
+    ],
+    "configuration": {
+      "groupName": "shopeasy-api-sg",
+      "ipPermissions": [
+        {
+          "ipProtocol": "tcp",
+          "fromPort": 3000,
+          "toPort": 3000,
+          "ipRanges": [{"cidrIp": "10.0.0.0/16"}]
+        }
+      ]
+    },
+    "tags": {
+      "Environment": "Production",
+      "Application": "ShopEasy"
+    }
+  }
+}</code></pre>
+      </div>
+
+      <h3>구성 기록 타임라인</h3>
+      <p>Config는 리소스별로 <strong>구성 변경 타임라인</strong>을 유지합니다. ShopEasy의 보안그룹이 어떻게 변경되어 왔는지 시간순으로 확인할 수 있습니다.</p>
+
+      <div class="diagram">
+        <div class="diagram-title">ShopEasy 보안그룹 구성 변경 타임라인 예시</div>
+        <div class="diagram-row">
+          <div class="diagram-box storage">
+            <div class="box-title">01/10 생성</div>
+            <div class="box-sub">인바운드: 3000/tcp<br>소스: 10.0.0.0/16</div>
+          </div>
+          <div class="diagram-arrow">&#x2192;</div>
+          <div class="diagram-box detective">
+            <div class="box-title">01/12 변경</div>
+            <div class="box-sub">인바운드: 3000/tcp<br>+ 22/tcp (0.0.0.0/0)</div>
+          </div>
+          <div class="diagram-arrow">&#x2192;</div>
+          <div class="diagram-box security">
+            <div class="box-title">01/12 비준수</div>
+            <div class="box-sub">restricted-ssh<br>규칙 위반 감지</div>
+          </div>
+          <div class="diagram-arrow">&#x2192;</div>
+          <div class="diagram-box storage">
+            <div class="box-title">01/13 수정</div>
+            <div class="box-sub">인바운드: 3000/tcp<br>+ 22/tcp (관리 IP만)</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">Config와 CloudTrail 연동</div>
+        <p>Config 타임라인에서 구성 변경을 클릭하면, 해당 변경을 일으킨 <strong>CloudTrail 이벤트로 바로 이동</strong>할 수 있습니다. 예를 들어, 보안그룹에 SSH 규칙이 추가된 시점에서 "누가 이 변경을 했는가?"를 즉시 추적할 수 있습니다.</p>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">AWS Config 아키텍처</div>
+        <div class="diagram-row">
+          <div class="diagram-box compute">
+            <div class="box-title">AWS 리소스</div>
+            <div class="box-sub">EC2, S3, RDS, IAM 등</div>
+          </div>
+          <div class="diagram-arrow">&#x2192;</div>
+          <div class="diagram-box detective">
+            <div class="box-title">AWS Config</div>
+            <div class="box-sub">구성 변경 감지 &amp; 기록</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-arrow down">&#x2193;</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box security">
+            <div class="box-title">Config 규칙</div>
+            <div class="box-sub">준수/비준수 평가</div>
+          </div>
+          <div class="diagram-arrow">&#x2192;</div>
+          <div class="diagram-box storage">
+            <div class="box-title">S3 버킷</div>
+            <div class="box-sub">구성 스냅샷 저장</div>
+          </div>
+          <div class="diagram-arrow">&#x2192;</div>
+          <div class="diagram-box monitor">
+            <div class="box-title">SNS / EventBridge</div>
+            <div class="box-sub">알림 &amp; 자동 수정</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 2: 관리형 규칙 -->
+    <!-- ============================================================ -->
+    <section class="content-section" id="managed-rules">
+      <h2>관리형 규칙</h2>
+
+      <p>AWS Config는 <strong>350개 이상의 관리형 규칙(Managed Rules)</strong>을 제공합니다. 관리형 규칙은 AWS가 미리 작성한 규칙으로, 활성화만 하면 바로 리소스 평가를 시작합니다. 이 중 ShopEasy 환경에서 가장 중요한 보안 관련 규칙을 살펴봅니다.</p>
+
+      <h3>핵심 보안 관리형 규칙</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>규칙 이름</th>
+            <th>점검 항목</th>
+            <th>ShopEasy 적용</th>
+            <th>심각도</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>s3-bucket-public-read-prohibited</code></td>
+            <td>S3 버킷이 퍼블릭 읽기 접근을 허용하는지 확인</td>
+            <td>고객 데이터, 주문 정보 저장 버킷이 퍼블릭이면 안 됨</td>
+            <td>높음</td>
+          </tr>
+          <tr>
+            <td><code>restricted-ssh</code></td>
+            <td>보안그룹의 SSH(22번 포트) 인바운드가 0.0.0.0/0으로 열려있는지 확인</td>
+            <td>ShopEasy API 서버, DB 서버의 SSH 접근 제한 필수</td>
+            <td>높음</td>
+          </tr>
+          <tr>
+            <td><code>encrypted-volumes</code></td>
+            <td>EBS 볼륨이 암호화되어 있는지 확인</td>
+            <td>ShopEasy EC2 인스턴스의 데이터 보호</td>
+            <td>중간</td>
+          </tr>
+          <tr>
+            <td><code>iam-password-policy</code></td>
+            <td>IAM 비밀번호 정책이 기준(길이, 복잡성 등)을 충족하는지 확인</td>
+            <td>ShopEasy 운영팀 IAM 사용자 비밀번호 강도 보장</td>
+            <td>높음</td>
+          </tr>
+          <tr>
+            <td><code>rds-instance-public-access-check</code></td>
+            <td>RDS 인스턴스가 퍼블릭으로 접근 가능한지 확인</td>
+            <td>ShopEasy 데이터베이스는 VPC 내부에서만 접근 가능해야 함</td>
+            <td>높음</td>
+          </tr>
+          <tr>
+            <td><code>vpc-flow-logs-enabled</code></td>
+            <td>VPC에 Flow Logs가 활성화되어 있는지 확인</td>
+            <td>ShopEasy VPC의 네트워크 트래픽 모니터링</td>
+            <td>중간</td>
+          </tr>
+          <tr>
+            <td><code>cloudtrail-enabled</code></td>
+            <td>CloudTrail이 활성화되어 있는지 확인</td>
+            <td>ShopEasy 계정의 모든 API 호출 추적 보장</td>
+            <td>높음</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>추가 권장 보안 규칙</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>규칙 이름</th>
+            <th>점검 항목</th>
+            <th>ShopEasy 적용</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>iam-user-mfa-enabled</code></td>
+            <td>모든 IAM 사용자에게 MFA가 활성화되어 있는지</td>
+            <td>ShopEasy 운영팀 전원 MFA 필수</td>
+          </tr>
+          <tr>
+            <td><code>root-account-mfa-enabled</code></td>
+            <td>루트 계정에 MFA가 활성화되어 있는지</td>
+            <td>AWS 계정 최고 권한 보호</td>
+          </tr>
+          <tr>
+            <td><code>iam-root-access-key-check</code></td>
+            <td>루트 계정에 액세스 키가 없는지</td>
+            <td>루트 계정의 프로그래밍 접근 차단</td>
+          </tr>
+          <tr>
+            <td><code>s3-bucket-ssl-requests-only</code></td>
+            <td>S3 버킷이 HTTPS 요청만 허용하는지</td>
+            <td>전송 중 데이터 암호화 보장</td>
+          </tr>
+          <tr>
+            <td><code>rds-storage-encrypted</code></td>
+            <td>RDS 인스턴스의 스토리지가 암호화되어 있는지</td>
+            <td>ShopEasy 고객 데이터 저장 암호화</td>
+          </tr>
+          <tr>
+            <td><code>s3-bucket-versioning-enabled</code></td>
+            <td>S3 버킷에 버전 관리가 활성화되어 있는지</td>
+            <td>데이터 실수 삭제 방지 및 복구 보장</td>
+          </tr>
+          <tr>
+            <td><code>alb-http-to-https-redirection-check</code></td>
+            <td>ALB가 HTTP를 HTTPS로 리다이렉트하는지</td>
+            <td>ShopEasy 사용자 트래픽 암호화</td>
+          </tr>
+          <tr>
+            <td><code>lambda-function-public-access-prohibited</code></td>
+            <td>Lambda 함수가 퍼블릭 접근을 허용하지 않는지</td>
+            <td>ShopEasy 백엔드 Lambda 함수 보호</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box warning">
+        <div class="info-box-title">Config 규칙 비용</div>
+        <p>Config 규칙은 <strong>규칙 평가 횟수</strong>에 따라 과금됩니다. 리소스 변경이 발생할 때마다, 또는 주기적으로(1시간, 3시간, 6시간, 12시간, 24시간) 평가가 실행됩니다. ShopEasy 환경에서는 가장 중요한 규칙부터 시작하여 점진적으로 늘려가는 것이 좋습니다.</p>
+        <ul>
+          <li><strong>1단계 (필수):</strong> s3-bucket-public-read-prohibited, restricted-ssh, cloudtrail-enabled, rds-instance-public-access-check</li>
+          <li><strong>2단계 (권장):</strong> encrypted-volumes, iam-password-policy, iam-user-mfa-enabled, vpc-flow-logs-enabled</li>
+          <li><strong>3단계 (추가):</strong> 나머지 보안 규칙들</li>
+        </ul>
+      </div>
+
+      <h3>각 규칙의 상세 설명 및 활용</h3>
+
+      <h4>s3-bucket-public-read-prohibited</h4>
+      <p>S3 버킷의 ACL 또는 버킷 정책이 퍼블릭 읽기 접근을 허용하는 경우 <strong>비준수(NON_COMPLIANT)</strong>로 평가됩니다.</p>
+
+      <div class="info-box danger">
+        <div class="info-box-title">ShopEasy S3 퍼블릭 노출 시나리오</div>
+        <p>ShopEasy에서 고객 주문 데이터를 저장하는 <code>shopeasy-orders</code> 버킷이 실수로 퍼블릭으로 설정되면, 고객의 이름, 주소, 결제 정보가 인터넷에 공개됩니다. Config의 <code>s3-bucket-public-read-prohibited</code> 규칙이 활성화되어 있다면, 변경 즉시 비준수 상태로 감지하여 알림을 보냅니다.</p>
+      </div>
+
+      <h4>restricted-ssh</h4>
+      <p>보안그룹의 인바운드 규칙에서 SSH(22번 포트)가 <code>0.0.0.0/0</code>(전체 인터넷) 또는 <code>::/0</code>(전체 IPv6)으로 열려있는 경우 비준수로 평가됩니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>// 비준수 예시 - SSH가 전체 공개
+{
+  "ipPermissions": [{
+    "ipProtocol": "tcp",
+    "fromPort": 22,
+    "toPort": 22,
+    "ipRanges": [{"cidrIp": "0.0.0.0/0"}]  // 위험!
+  }]
+}
+
+// 준수 예시 - SSH가 특정 IP만 허용
+{
+  "ipPermissions": [{
+    "ipProtocol": "tcp",
+    "fromPort": 22,
+    "toPort": 22,
+    "ipRanges": [{"cidrIp": "203.0.113.50/32"}]  // 관리자 IP만
+  }]
+}</code></pre>
+      </div>
+
+      <h4>encrypted-volumes</h4>
+      <p>EBS 볼륨이 암호화되지 않은 경우 비준수로 평가됩니다. ShopEasy EC2 인스턴스에 연결된 모든 볼륨은 암호화되어야 합니다.</p>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">EBS 기본 암호화 설정</div>
+        <p>EC2 설정에서 <strong>"EBS 기본 암호화"</strong>를 활성화하면, 이후 생성되는 모든 EBS 볼륨이 자동으로 암호화됩니다. 기존에 암호화되지 않은 볼륨은 스냅샷을 생성하고 암호화된 스냅샷에서 새 볼륨을 생성하여 교체해야 합니다.</p>
+      </div>
+
+      <!-- Lab: 관리형 규칙 활성화 실습 -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: ShopEasy Config 관리형 규칙 활성화</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">AWS Config 서비스 설정</div>
+            <p>AWS Management Console에서 <strong>AWS Config</strong> 서비스로 이동합니다.</p>
+            <p>아직 Config가 활성화되지 않았다면 <strong>시작하기</strong>를 클릭합니다:</p>
+            <ul>
+              <li><strong>기록할 리소스:</strong> "이 리전에서 지원되는 모든 리소스 기록" 선택</li>
+              <li><strong>글로벌 리소스 포함:</strong> 활성화 (IAM 등 글로벌 리소스도 기록)</li>
+              <li><strong>S3 버킷:</strong> 새 버킷 생성 (예: <code>shopeasy-config-logs-{계정ID}</code>)</li>
+              <li><strong>SNS 주제:</strong> 기존 주제 <code>shopeasy-security-alerts</code> 선택 또는 새로 생성</li>
+              <li><strong>Config 역할:</strong> AWS 관리형 역할 사용</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">규칙 추가 - S3 퍼블릭 접근 금지</div>
+            <p>좌측 메뉴에서 <strong>규칙 (Rules)</strong>을 클릭하고 <strong>규칙 추가</strong>를 클릭합니다.</p>
+            <ul>
+              <li><strong>규칙 유형:</strong> AWS 관리형 규칙</li>
+              <li><strong>검색:</strong> <code>s3-bucket-public-read-prohibited</code></li>
+              <li><strong>트리거 유형:</strong> 구성 변경 시 (Configuration changes)</li>
+              <li>기본 설정으로 <strong>저장</strong></li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">규칙 추가 - SSH 접근 제한</div>
+            <p>같은 방법으로 <code>restricted-ssh</code> 규칙을 추가합니다:</p>
+            <ul>
+              <li><strong>검색:</strong> <code>restricted-ssh</code></li>
+              <li><strong>트리거 유형:</strong> 구성 변경 시</li>
+              <li>기본 설정으로 <strong>저장</strong></li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">규칙 추가 - CloudTrail 활성화 확인</div>
+            <p><code>cloudtrail-enabled</code> 규칙을 추가합니다:</p>
+            <ul>
+              <li><strong>검색:</strong> <code>cloudtrail-enabled</code></li>
+              <li><strong>트리거 유형:</strong> 주기적 (Periodic) - 24시간</li>
+              <li>기본 설정으로 <strong>저장</strong></li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">규칙 추가 - RDS 퍼블릭 접근 확인</div>
+            <p><code>rds-instance-public-access-check</code> 규칙을 추가합니다:</p>
+            <ul>
+              <li><strong>검색:</strong> <code>rds-instance-public-access-check</code></li>
+              <li><strong>트리거 유형:</strong> 구성 변경 시</li>
+              <li>기본 설정으로 <strong>저장</strong></li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">규칙 평가 결과 확인</div>
+            <p>규칙 추가 후 몇 분이 지나면 평가가 완료됩니다.</p>
+            <p>각 규칙을 클릭하면 <strong>준수/비준수 리소스 목록</strong>을 확인할 수 있습니다.</p>
+            <p>비준수 리소스가 있다면 해당 리소스를 클릭하여 상세 구성을 확인하고, 원인을 파악합니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">리소스 타임라인 확인</div>
+            <p>Config 대시보드에서 <strong>리소스</strong>를 클릭합니다.</p>
+            <p>ShopEasy의 보안그룹이나 S3 버킷을 검색하여 선택합니다.</p>
+            <p><strong>리소스 타임라인</strong>을 확인하여 구성 변경 히스토리를 살펴봅니다.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">AWS CLI로 Config 규칙 추가하기</div>
+        <div class="code-block">
+          <div class="code-header">
+            <span class="lang">bash</span>
+            <button class="copy-btn">복사</button>
+          </div>
+          <pre><code># restricted-ssh 규칙 추가
+aws configservice put-config-rule --config-rule '{
+  "ConfigRuleName": "restricted-ssh",
+  "Source": {
+    "Owner": "AWS",
+    "SourceIdentifier": "INCOMING_SSH_DISABLED"
+  },
+  "Scope": {
+    "ComplianceResourceTypes": ["AWS::EC2::SecurityGroup"]
+  }
+}'
+
+# 규칙 평가 상태 확인
+aws configservice describe-compliance-by-config-rule \
+  --config-rule-names restricted-ssh
+
+# 비준수 리소스 조회
+aws configservice get-compliance-details-by-config-rule \
+  --config-rule-name restricted-ssh \
+  --compliance-types NON_COMPLIANT</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 3: 적합성 팩 -->
+    <!-- ============================================================ -->
+    <section class="content-section" id="conformance-pack">
+      <h2>적합성 팩 (Conformance Pack)</h2>
+
+      <h3>적합성 팩이란?</h3>
+      <p>적합성 팩(Conformance Pack)은 <strong>여러 Config 규칙과 수정 작업을 하나의 패키지로 묶은 것</strong>입니다. 특정 규정 준수 프레임워크(예: PCI DSS, CIS Benchmark)에 필요한 규칙들을 한 번에 배포할 수 있습니다.</p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 건강 검진 패키지</div>
+        <p>병원에서 "종합 건강검진 패키지"를 신청하면, 혈압, 혈당, 콜레스테롤, 간 기능, 신장 기능 등 여러 검사가 한 번에 진행됩니다. 개별 검사를 하나씩 신청하는 것보다 패키지로 한 번에 받는 것이 편리하죠.</p>
+        <p>적합성 팩도 마찬가지입니다. 보안 규칙을 하나씩 추가하는 대신, <strong>"AWS 보안 모범 사례 패키지"</strong>를 배포하면 관련 규칙이 한 번에 활성화됩니다.</p>
+      </div>
+
+      <h3>AWS 제공 보안 적합성 팩</h3>
+      <p>AWS는 다양한 보안 프레임워크에 맞는 적합성 팩 템플릿을 제공합니다.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>적합성 팩</th>
+            <th>대상</th>
+            <th>포함 규칙 수</th>
+            <th>ShopEasy 적용</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Operational Best Practices for AWS Identity and Access Management</strong></td>
+            <td>IAM 보안 모범 사례</td>
+            <td>약 15개</td>
+            <td>IAM 사용자/역할 보안 강화</td>
+          </tr>
+          <tr>
+            <td><strong>Operational Best Practices for Amazon S3</strong></td>
+            <td>S3 보안 모범 사례</td>
+            <td>약 20개</td>
+            <td>고객 데이터 저장 버킷 보안</td>
+          </tr>
+          <tr>
+            <td><strong>Operational Best Practices for CIS AWS Foundations Benchmark Level 1</strong></td>
+            <td>CIS 벤치마크 레벨 1</td>
+            <td>약 40개</td>
+            <td>기본 보안 기준선 달성</td>
+          </tr>
+          <tr>
+            <td><strong>Operational Best Practices for PCI DSS</strong></td>
+            <td>결제카드 산업 보안 표준</td>
+            <td>약 50개</td>
+            <td>결제 처리 환경 보안 (해당 시)</td>
+          </tr>
+          <tr>
+            <td><strong>Operational Best Practices for Encryption and Keys</strong></td>
+            <td>암호화 모범 사례</td>
+            <td>약 15개</td>
+            <td>데이터 암호화 보장</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>커스텀 적합성 팩 작성</h3>
+      <p>ShopEasy 환경에 맞는 커스텀 적합성 팩을 YAML 형식으로 작성할 수 있습니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">yaml</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># shopeasy-security-conformance-pack.yaml
+Parameters:
+  S3BucketName:
+    Type: String
+    Default: "shopeasy-*"
+
+ConformancePackName: ShopEasy-Security-Pack
+
+Resources:
+  # S3 보안 규칙
+  S3BucketPublicReadProhibited:
+    Properties:
+      ConfigRuleName: shopeasy-s3-public-read-prohibited
+      Source:
+        Owner: AWS
+        SourceIdentifier: S3_BUCKET_PUBLIC_READ_PROHIBITED
+    Type: AWS::Config::ConfigRule
+
+  S3BucketPublicWriteProhibited:
+    Properties:
+      ConfigRuleName: shopeasy-s3-public-write-prohibited
+      Source:
+        Owner: AWS
+        SourceIdentifier: S3_BUCKET_PUBLIC_WRITE_PROHIBITED
+    Type: AWS::Config::ConfigRule
+
+  S3BucketSSLRequestsOnly:
+    Properties:
+      ConfigRuleName: shopeasy-s3-ssl-only
+      Source:
+        Owner: AWS
+        SourceIdentifier: S3_BUCKET_SSL_REQUESTS_ONLY
+    Type: AWS::Config::ConfigRule
+
+  S3BucketVersioningEnabled:
+    Properties:
+      ConfigRuleName: shopeasy-s3-versioning
+      Source:
+        Owner: AWS
+        SourceIdentifier: S3_BUCKET_VERSIONING_ENABLED
+    Type: AWS::Config::ConfigRule
+
+  # 네트워크 보안 규칙
+  RestrictedSSH:
+    Properties:
+      ConfigRuleName: shopeasy-restricted-ssh
+      Source:
+        Owner: AWS
+        SourceIdentifier: INCOMING_SSH_DISABLED
+    Type: AWS::Config::ConfigRule
+
+  VpcFlowLogsEnabled:
+    Properties:
+      ConfigRuleName: shopeasy-vpc-flow-logs
+      Source:
+        Owner: AWS
+        SourceIdentifier: VPC_FLOW_LOGS_ENABLED
+    Type: AWS::Config::ConfigRule
+
+  # 데이터 암호화 규칙
+  EncryptedVolumes:
+    Properties:
+      ConfigRuleName: shopeasy-encrypted-volumes
+      Source:
+        Owner: AWS
+        SourceIdentifier: ENCRYPTED_VOLUMES
+    Type: AWS::Config::ConfigRule
+
+  RDSStorageEncrypted:
+    Properties:
+      ConfigRuleName: shopeasy-rds-encrypted
+      Source:
+        Owner: AWS
+        SourceIdentifier: RDS_STORAGE_ENCRYPTED
+    Type: AWS::Config::ConfigRule
+
+  # IAM 보안 규칙
+  IAMPasswordPolicy:
+    Properties:
+      ConfigRuleName: shopeasy-iam-password-policy
+      Source:
+        Owner: AWS
+        SourceIdentifier: IAM_PASSWORD_POLICY
+      InputParameters:
+        RequireUppercaseCharacters: "true"
+        RequireLowercaseCharacters: "true"
+        RequireSymbols: "true"
+        RequireNumbers: "true"
+        MinimumPasswordLength: "14"
+        PasswordReusePrevention: "24"
+        MaxPasswordAge: "90"
+    Type: AWS::Config::ConfigRule
+
+  IAMUserMFAEnabled:
+    Properties:
+      ConfigRuleName: shopeasy-iam-user-mfa
+      Source:
+        Owner: AWS
+        SourceIdentifier: IAM_USER_MFA_ENABLED
+    Type: AWS::Config::ConfigRule
+
+  # 로깅 규칙
+  CloudTrailEnabled:
+    Properties:
+      ConfigRuleName: shopeasy-cloudtrail-enabled
+      Source:
+        Owner: AWS
+        SourceIdentifier: CLOUD_TRAIL_ENABLED
+    Type: AWS::Config::ConfigRule
+
+  # RDS 보안 규칙
+  RDSInstancePublicAccessCheck:
+    Properties:
+      ConfigRuleName: shopeasy-rds-no-public
+      Source:
+        Owner: AWS
+        SourceIdentifier: RDS_INSTANCE_PUBLIC_ACCESS_CHECK
+    Type: AWS::Config::ConfigRule</code></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 커스텀 적합성 팩 배포
+aws configservice put-conformance-pack \
+  --conformance-pack-name "ShopEasy-Security-Pack" \
+  --template-body file://shopeasy-security-conformance-pack.yaml \
+  --delivery-s3-bucket shopeasy-config-logs-123456789012
+
+# 적합성 팩 상태 확인
+aws configservice describe-conformance-pack-status \
+  --conformance-pack-names "ShopEasy-Security-Pack"
+
+# 적합성 팩 평가 결과 조회
+aws configservice get-conformance-pack-compliance-summary \
+  --conformance-pack-names "ShopEasy-Security-Pack"</code></pre>
+      </div>
+
+      <h3>조직 수준 배포</h3>
+      <p>AWS Organizations를 사용하는 경우, <strong>조직 적합성 팩(Organization Conformance Pack)</strong>을 배포하면 모든 멤버 계정에 동일한 보안 규칙을 한 번에 적용할 수 있습니다.</p>
+
+      <div class="info-box tip">
+        <div class="info-box-title">조직 적합성 팩의 장점</div>
+        <ul>
+          <li>ShopEasy의 개발(dev), 스테이징(staging), 프로덕션(prod) 계정에 <strong>동일한 보안 기준</strong>을 적용</li>
+          <li>새로운 계정이 조직에 추가되면 <strong>자동으로 규칙이 배포</strong>됨</li>
+          <li>관리 계정에서 <strong>모든 멤버 계정의 규정 준수 현황</strong>을 통합 조회</li>
+          <li>개별 계정에서 규칙을 삭제하거나 비활성화할 수 없음 (<strong>중앙 통제</strong>)</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- Section 4: 비준수 리소스 대시보드 -->
+    <!-- ============================================================ -->
+    <section class="content-section" id="compliance-dashboard">
+      <h2>비준수 리소스 대시보드</h2>
+
+      <h3>Config 대시보드에서 비준수 리소스 확인</h3>
+      <p>AWS Config 대시보드는 <strong>전체 규정 준수 현황을 한눈에 파악</strong>할 수 있는 화면을 제공합니다. 규칙별 준수/비준수 상태, 비준수 리소스 수, 최근 변경 사항 등을 확인할 수 있습니다.</p>
+
+      <div class="diagram">
+        <div class="diagram-title">ShopEasy Config 대시보드 현황 (예시)</div>
+        <div class="diagram-row">
+          <div class="diagram-box storage">
+            <div class="box-title">준수 규칙</div>
+            <div class="box-sub">5개 / 전체 8개</div>
+          </div>
+          <div class="diagram-box security">
+            <div class="box-title">비준수 규칙</div>
+            <div class="box-sub">3개 / 전체 8개</div>
+          </div>
+          <div class="diagram-box detective">
+            <div class="box-title">비준수 리소스</div>
+            <div class="box-sub">7개 발견</div>
+          </div>
+        </div>
+      </div>
+
+      <h3>규칙별 준수/비준수 상태</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>규칙</th>
+            <th>상태</th>
+            <th>준수</th>
+            <th>비준수</th>
+            <th>조치 필요</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>s3-bucket-public-read-prohibited</code></td>
+            <td style="color: #2E7D32;"><strong>준수</strong></td>
+            <td>5개 버킷</td>
+            <td>0개</td>
+            <td>없음</td>
+          </tr>
+          <tr>
+            <td><code>restricted-ssh</code></td>
+            <td style="color: #B71C1C;"><strong>비준수</strong></td>
+            <td>3개 보안그룹</td>
+            <td>2개</td>
+            <td>SSH 규칙 수정 필요</td>
+          </tr>
+          <tr>
+            <td><code>encrypted-volumes</code></td>
+            <td style="color: #B71C1C;"><strong>비준수</strong></td>
+            <td>6개 볼륨</td>
+            <td>3개</td>
+            <td>볼륨 암호화 필요</td>
+          </tr>
+          <tr>
+            <td><code>iam-password-policy</code></td>
+            <td style="color: #2E7D32;"><strong>준수</strong></td>
+            <td>1개 정책</td>
+            <td>0개</td>
+            <td>없음</td>
+          </tr>
+          <tr>
+            <td><code>rds-instance-public-access-check</code></td>
+            <td style="color: #2E7D32;"><strong>준수</strong></td>
+            <td>2개 인스턴스</td>
+            <td>0개</td>
+            <td>없음</td>
+          </tr>
+          <tr>
+            <td><code>vpc-flow-logs-enabled</code></td>
+            <td style="color: #B71C1C;"><strong>비준수</strong></td>
+            <td>0개 VPC</td>
+            <td>2개</td>
+            <td>Flow Logs 활성화 필요</td>
+          </tr>
+          <tr>
+            <td><code>cloudtrail-enabled</code></td>
+            <td style="color: #2E7D32;"><strong>준수</strong></td>
+            <td>1개 트레일</td>
+            <td>0개</td>
+            <td>없음</td>
+          </tr>
+          <tr>
+            <td><code>iam-user-mfa-enabled</code></td>
+            <td style="color: #2E7D32;"><strong>준수</strong></td>
+            <td>3명 사용자</td>
+            <td>0개</td>
+            <td>없음</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>자동 수정 (Remediation) 설정</h3>
+      <p>AWS Config의 <strong>자동 수정(Remediation)</strong> 기능을 사용하면, 비준수 리소스가 감지되었을 때 <strong>자동으로 또는 수동으로 수정 작업을 실행</strong>할 수 있습니다. 수정 작업은 AWS Systems Manager Automation 문서를 사용합니다.</p>
+
+      <div class="info-box concept">
+        <div class="info-box-title">자동 수정 vs 수동 수정</div>
+        <table>
+          <thead>
+            <tr>
+              <th>항목</th>
+              <th>자동 수정 (Automatic)</th>
+              <th>수동 수정 (Manual)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>실행 시점</strong></td>
+              <td>비준수 감지 시 자동 실행</td>
+              <td>관리자가 수동으로 실행</td>
+            </tr>
+            <tr>
+              <td><strong>적합한 경우</strong></td>
+              <td>위험도가 높고, 자동 수정이 안전한 경우</td>
+              <td>자동 수정이 서비스에 영향을 줄 수 있는 경우</td>
+            </tr>
+            <tr>
+              <td><strong>예시</strong></td>
+              <td>S3 퍼블릭 접근 차단</td>
+              <td>보안그룹 규칙 수정 (서비스 확인 후)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>주요 수정 작업 (SSM Automation 문서)</h4>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Config 규칙</th>
+            <th>수정 SSM 문서</th>
+            <th>수정 내용</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>s3-bucket-public-read-prohibited</code></td>
+            <td><code>AWS-DisableS3BucketPublicReadWrite</code></td>
+            <td>S3 버킷의 퍼블릭 ACL과 정책 비활성화</td>
+          </tr>
+          <tr>
+            <td><code>encrypted-volumes</code></td>
+            <td><code>AWS-EnableEbsEncryptionByDefault</code></td>
+            <td>EBS 기본 암호화 활성화 (새 볼륨에 적용)</td>
+          </tr>
+          <tr>
+            <td><code>vpc-flow-logs-enabled</code></td>
+            <td><code>AWS-EnableVPCFlowLogs</code></td>
+            <td>VPC Flow Logs 활성화</td>
+          </tr>
+          <tr>
+            <td><code>restricted-ssh</code></td>
+            <td><code>AWS-DisablePublicAccessForSecurityGroup</code></td>
+            <td>보안그룹에서 0.0.0.0/0 SSH 규칙 제거</td>
+          </tr>
+          <tr>
+            <td><code>rds-instance-public-access-check</code></td>
+            <td><code>AWS-DisableRDSInstancePublicAccess</code></td>
+            <td>RDS 인스턴스의 퍼블릭 접근 비활성화</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box warning">
+        <div class="info-box-title">자동 수정 시 주의사항</div>
+        <p>자동 수정은 편리하지만, <strong>잘못 설정하면 서비스 중단</strong>을 일으킬 수 있습니다:</p>
+        <ul>
+          <li>보안그룹에서 SSH 규칙을 자동으로 제거하면, <strong>긴급 접근이 불가능</strong>해질 수 있습니다</li>
+          <li>S3 퍼블릭 접근을 자동 차단하면, <strong>정적 웹 호스팅 버킷</strong>이 접속 불가능해질 수 있습니다</li>
+          <li>프로덕션 환경에서는 <strong>수동 수정을 먼저 테스트</strong>한 후, 자동 수정으로 전환하세요</li>
+          <li>자동 수정 대상에서 <strong>예외(Exception)</strong>를 설정하여 의도적인 설정을 보호하세요</li>
+        </ul>
+      </div>
+
+      <!-- Lab: 비준수 리소스 확인 및 수정 -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: 비준수 리소스 확인 및 자동 수정 설정</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">비준수 리소스 확인</div>
+            <p>AWS Config 콘솔에서 좌측 메뉴의 <strong>규칙 (Rules)</strong>을 클릭합니다.</p>
+            <p>비준수 상태인 규칙을 찾아 클릭합니다 (예: <code>restricted-ssh</code>).</p>
+            <p><strong>비준수 리소스</strong> 목록에서 해당 보안그룹의 ID를 확인합니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">비준수 원인 분석</div>
+            <p>비준수 리소스를 클릭하여 <strong>리소스 타임라인</strong>을 확인합니다.</p>
+            <p>구성 변경 시점과 CloudTrail 이벤트를 연결하여 "누가 언제 이 변경을 했는지" 파악합니다.</p>
+            <p>예: "2024-01-12 10:30에 shopeasy-dev 사용자가 보안그룹에 SSH 0.0.0.0/0 규칙을 추가함"</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">수동 수정 실행</div>
+            <p>규칙 상세 페이지에서 <strong>작업 &gt; 수정 관리 (Manage remediation)</strong>를 클릭합니다.</p>
+            <ul>
+              <li><strong>수정 유형:</strong> 수동 수정 (Manual remediation)</li>
+              <li><strong>수정 작업:</strong> <code>AWS-DisablePublicAccessForSecurityGroup</code> 선택</li>
+              <li><strong>파라미터:</strong> 자동 입력 (리소스 ID 매핑)</li>
+            </ul>
+            <p><strong>저장</strong> 후, 비준수 리소스를 선택하고 <strong>"수정 실행"</strong>을 클릭합니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">자동 수정으로 전환</div>
+            <p>수동 수정이 안전하게 작동하는 것을 확인한 후, <strong>자동 수정</strong>으로 전환할 수 있습니다.</p>
+            <p>규칙 상세 페이지에서 수정 설정을 변경합니다:</p>
+            <ul>
+              <li><strong>수정 유형:</strong> 자동 수정 (Automatic remediation)</li>
+              <li><strong>재시도 횟수:</strong> 3회</li>
+              <li><strong>재시도 간격:</strong> 60초</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">SNS 알림 연동</div>
+            <p>Config에서 비준수 리소스가 발견되면 SNS를 통해 알림을 받도록 설정합니다.</p>
+            <p><strong>EventBridge</strong>에서 규칙을 생성합니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">json</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>{
+  "source": ["aws.config"],
+  "detail-type": ["Config Rules Compliance Change"],
+  "detail": {
+    "messageType": ["ComplianceChangeNotification"],
+    "newEvaluationResult": {
+      "complianceType": ["NON_COMPLIANT"]
+    }
+  }
+}</code></pre>
+            </div>
+            <p>타겟으로 <code>shopeasy-security-alerts</code> SNS 주제를 선택합니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">테스트</div>
+            <p>테스트용 보안그룹을 생성하고 SSH 0.0.0.0/0 인바운드 규칙을 추가합니다.</p>
+            <p>몇 분 후 Config에서 비준수로 감지되는지 확인합니다.</p>
+            <p>자동 수정이 설정되어 있다면, 자동으로 해당 규칙이 제거되는지 확인합니다.</p>
+            <p>SNS 이메일 알림이 수신되는지 확인합니다.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">ShopEasy AWS Config 모범 사례 요약</div>
+        <ul>
+          <li><strong>모든 리소스 유형</strong>에 대해 Config 기록을 활성화합니다</li>
+          <li><strong>글로벌 리소스</strong>(IAM)도 반드시 포함합니다</li>
+          <li>최소 <strong>핵심 보안 규칙 7개</strong>를 활성화합니다 (위 표 참조)</li>
+          <li><strong>적합성 팩</strong>으로 일관된 보안 기준을 유지합니다</li>
+          <li><strong>자동 수정</strong>은 안전한 항목부터 적용합니다 (S3 퍼블릭 차단 등)</li>
+          <li><strong>EventBridge + SNS</strong>로 비준수 발생 시 즉시 알림을 받습니다</li>
+          <li>Config 구성 스냅샷을 <strong>S3에 장기 보관</strong>합니다</li>
+          <li>정기적으로 <strong>규정 준수 대시보드</strong>를 검토하여 보안 상태를 개선합니다</li>
+          <li>CloudTrail과 함께 사용하여 <strong>"누가 변경했고, 결과가 어떤지"</strong>를 완전히 추적합니다</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Chapter Navigation -->
+    <div class="chapter-nav">
+      <a href="17-cloudtrail.html" class="prev">이전: CloudTrail</a>
+      <a href="19-guardduty-securityhub.html" class="next">다음: GuardDuty &amp; Security Hub</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/18-aws-config.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>

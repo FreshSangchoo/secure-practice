@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/10-kms-encryption.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KMS & 암호화 기초 - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li><a href="#encryption-types">전송 중 vs 저장 시 암호화</a></li>
+      <li><a href="#kms-concept">AWS KMS 개념</a></li>
+      <li><a href="#kms-key-policy">KMS 키 생성 & 키 정책</a></li>
+      <li><a href="#key-rotation">키 로테이션</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 10</span>
+      <h1>KMS & 암호화 기초</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>전송 중 암호화와 저장 시 암호화의 차이를 이해하고 설명할 수 있다</li>
+          <li>AWS KMS의 핵심 개념(CMK, 데이터 키, 봉투 암호화)을 이해할 수 있다</li>
+          <li>KMS 키를 생성하고 키 정책을 설정할 수 있다</li>
+          <li>키 로테이션의 필요성을 이해하고 자동/수동 로테이션을 설정할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ======================================== -->
+    <!-- 섹션 1: 전송 중 암호화 vs 저장 시 암호화 -->
+    <!-- ======================================== -->
+    <section class="content-section" id="encryption-types">
+      <h2>1. 전송 중 암호화 vs 저장 시 암호화</h2>
+
+      <p>
+        데이터 보호에서 암호화는 가장 기본적이면서도 중요한 방어 수단입니다.
+        ShopEasy 이커머스 서비스에서 고객의 결제 정보, 개인정보, 주문 내역 등 민감한 데이터는
+        <strong>이동 중</strong>에도, <strong>저장되어 있을 때</strong>에도 반드시 암호화되어야 합니다.
+      </p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 편지 봉투(전송 중) vs 금고(저장 시)</div>
+        <p>
+          <strong>전송 중 암호화</strong>는 편지를 봉투에 넣어 보내는 것과 같습니다.
+          배달 과정에서 누군가가 편지를 가로채더라도 봉투를 열지 못하면 내용을 볼 수 없습니다. (TLS/SSL)<br><br>
+          <strong>저장 시 암호화</strong>는 편지를 금고에 보관하는 것과 같습니다.
+          누군가가 금고에 물리적으로 접근하더라도 열쇠 없이는 내용물을 꺼낼 수 없습니다. (AES-256 등)<br><br>
+          ShopEasy 고객의 신용카드 정보를 예로 들면, 결제 시 브라우저에서 서버로 전송할 때는 TLS로 보호하고,
+          데이터베이스에 저장할 때는 KMS 키로 암호화하여 보호합니다.
+        </p>
+      </div>
+
+      <h3>전송 중 암호화 (Encryption in Transit)</h3>
+      <p>
+        전송 중 암호화는 데이터가 네트워크를 통해 이동하는 동안 제3자가 데이터를 읽거나 수정할 수 없도록 보호합니다.
+        주로 <strong>TLS(Transport Layer Security)</strong> 프로토콜을 사용합니다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>ShopEasy 구간</th>
+            <th>전송 중 암호화 방법</th>
+            <th>프로토콜</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>고객 브라우저 &harr; CloudFront</td>
+            <td>HTTPS 강제 (ACM 인증서)</td>
+            <td>TLS 1.2 / 1.3</td>
+          </tr>
+          <tr>
+            <td>CloudFront &harr; ALB</td>
+            <td>HTTPS (Origin Protocol Policy)</td>
+            <td>TLS 1.2</td>
+          </tr>
+          <tr>
+            <td>ALB &harr; EC2 앱 서버</td>
+            <td>HTTPS 또는 HTTP (VPC 내부)</td>
+            <td>TLS 1.2 (권장)</td>
+          </tr>
+          <tr>
+            <td>EC2 앱 서버 &harr; RDS</td>
+            <td>SSL/TLS 연결</td>
+            <td>TLS 1.2</td>
+          </tr>
+          <tr>
+            <td>EC2 앱 서버 &harr; S3</td>
+            <td>HTTPS API 호출</td>
+            <td>TLS 1.2</td>
+          </tr>
+          <tr>
+            <td>EC2 앱 서버 &harr; ElastiCache</td>
+            <td>In-transit encryption</td>
+            <td>TLS 1.2</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>저장 시 암호화 (Encryption at Rest)</h3>
+      <p>
+        저장 시 암호화는 디스크, 데이터베이스, 오브젝트 스토리지 등에 데이터가 저장될 때 암호화하여,
+        물리적 디스크 탈취나 스토리지 접근 시에도 데이터를 보호합니다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>ShopEasy 스토리지</th>
+            <th>저장 시 암호화 방법</th>
+            <th>키 관리</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>EBS 볼륨 (EC2)</td>
+            <td>EBS 암호화</td>
+            <td>AWS 관리형 키 또는 CMK</td>
+          </tr>
+          <tr>
+            <td>RDS (MySQL)</td>
+            <td>RDS 저장 시 암호화</td>
+            <td>KMS CMK</td>
+          </tr>
+          <tr>
+            <td>S3 (상품 이미지, 리뷰 사진)</td>
+            <td>SSE-S3 또는 SSE-KMS</td>
+            <td>S3 관리형 키 또는 KMS CMK</td>
+          </tr>
+          <tr>
+            <td>DynamoDB (세션/캐시)</td>
+            <td>기본 암호화</td>
+            <td>AWS 소유 키 또는 KMS CMK</td>
+          </tr>
+          <tr>
+            <td>ElastiCache</td>
+            <td>At-rest encryption</td>
+            <td>AWS 관리형</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">왜 둘 다 필요한가?</div>
+        <p>
+          전송 중 암호화만 적용하면: 네트워크에서는 안전하지만, 데이터가 저장된 디스크/DB가 탈취되면 노출됩니다.<br>
+          저장 시 암호화만 적용하면: 저장소는 안전하지만, 네트워크 도청(Man-in-the-Middle) 공격에 취약합니다.<br><br>
+          ShopEasy의 결제 정보 보호를 위해서는 <strong>반드시 두 가지 모두</strong> 적용해야 합니다.
+          PCI-DSS(결제카드 보안 표준)에서도 두 가지 암호화를 모두 요구합니다.
+        </p>
+      </div>
+
+      <h3>ShopEasy 데이터 흐름과 암호화</h3>
+
+      <div class="diagram">
+        <div class="diagram-title">ShopEasy 전체 데이터 흐름의 암호화 적용</div>
+        <div class="diagram-row">
+          <div class="diagram-box user">
+            <div class="box-title">고객 브라우저</div>
+            <div class="box-sub">HTTPS (TLS 1.3)</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box cdn">
+            <div class="box-title">CloudFront</div>
+            <div class="box-sub">ACM 인증서</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box network">
+            <div class="box-title">ALB</div>
+            <div class="box-sub">TLS 종료</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box compute">
+            <div class="box-title">EC2 앱 서버</div>
+            <div class="box-sub">EBS 암호화</div>
+          </div>
+        </div>
+        <div class="diagram-row" style="margin-top:1rem;">
+          <div class="diagram-box compute" style="margin-left:auto;">
+            <div class="box-title">EC2 앱 서버</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box database">
+            <div class="box-title">RDS (MySQL)</div>
+            <div class="box-sub">SSL + KMS 암호화</div>
+          </div>
+        </div>
+        <div class="diagram-row" style="margin-top:0.5rem;">
+          <div class="diagram-box compute" style="margin-left:auto;">
+            <div class="box-title">EC2 앱 서버</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box storage">
+            <div class="box-title">S3</div>
+            <div class="box-sub">HTTPS + SSE-KMS</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">TLS 버전 주의</div>
+        <p>
+          TLS 1.0과 1.1은 보안 취약점이 발견되어 더 이상 안전하지 않습니다.
+          ShopEasy에서는 <strong>최소 TLS 1.2</strong>를 사용해야 하며, 가능하면 <strong>TLS 1.3</strong>을 권장합니다.
+          CloudFront의 보안 정책(Security Policy)에서 <code>TLSv1.2_2021</code> 이상을 선택하세요.
+        </p>
+      </div>
+    </section>
+
+    <!-- ======================================== -->
+    <!-- 섹션 2: AWS KMS 개념 -->
+    <!-- ======================================== -->
+    <section class="content-section" id="kms-concept">
+      <h2>2. AWS KMS 개념</h2>
+
+      <p>
+        AWS Key Management Service(KMS)는 데이터 암호화에 사용되는 암호화 키를 생성하고 관리하는 완전 관리형 서비스입니다.
+        KMS를 사용하면 암호화 키의 생성, 저장, 사용, 폐기를 중앙에서 관리할 수 있으며,
+        키의 사용 이력이 CloudTrail에 기록되어 완전한 감사 추적이 가능합니다.
+      </p>
+
+      <h3>KMS 키(구 CMK) 유형</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>유형</th>
+            <th>생성/관리 주체</th>
+            <th>키 정책 수정</th>
+            <th>자동 로테이션</th>
+            <th>비용</th>
+            <th>사용 사례</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>AWS 관리형 키</strong></td>
+            <td>AWS가 자동 생성</td>
+            <td>불가</td>
+            <td>자동 (1년)</td>
+            <td>무료</td>
+            <td>기본 암호화 (EBS, S3, RDS 등)</td>
+          </tr>
+          <tr>
+            <td><strong>고객 관리형 키</strong></td>
+            <td>사용자가 생성</td>
+            <td>가능</td>
+            <td>설정 가능</td>
+            <td>월 $1/키 + API 호출 비용</td>
+            <td>세분화된 접근 제어, 교차 계정 사용</td>
+          </tr>
+          <tr>
+            <td><strong>AWS 소유 키</strong></td>
+            <td>AWS 서비스 내부</td>
+            <td>불가</td>
+            <td>AWS가 관리</td>
+            <td>무료</td>
+            <td>DynamoDB 기본 암호화 등</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box tip">
+        <div class="info-box-title">ShopEasy에 어떤 키를 사용해야 할까?</div>
+        <p>
+          <strong>결제 정보, 고객 개인정보</strong>: 고객 관리형 키 (세분화된 접근 제어, 감사 추적 필수)<br>
+          <strong>상품 이미지, 일반 로그</strong>: AWS 관리형 키 (간편한 설정, 추가 비용 없음)<br>
+          <strong>세션 데이터 (DynamoDB)</strong>: AWS 소유 키 또는 AWS 관리형 키 (비용 효율적)
+        </p>
+      </div>
+
+      <h3>데이터 키 (Data Key) 개념</h3>
+      <p>
+        KMS 키(마스터 키)로 직접 데이터를 암호화하는 것은 비효율적입니다.
+        KMS API 호출은 <strong>최대 4KB</strong>의 데이터만 암호화할 수 있기 때문입니다.
+        대신, KMS는 <strong>데이터 키</strong>를 생성하여 데이터를 암호화하는 방식을 사용합니다.
+        이것을 <strong>봉투 암호화(Envelope Encryption)</strong>라고 합니다.
+      </p>
+
+      <h3>봉투 암호화 (Envelope Encryption) 프로세스</h3>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 금고 열쇠를 다른 금고에 보관</div>
+        <p>
+          여러분이 중요한 문서를 보관한다고 가정해 봅시다:<br><br>
+          1. <strong>문서(데이터)</strong>를 작은 금고에 넣고 잠급니다. 이때 사용한 열쇠가 <strong>데이터 키</strong>입니다.<br>
+          2. 그 <strong>열쇠(데이터 키)</strong>를 은행의 대형 금고에 보관합니다. 대형 금고의 열쇠가 <strong>KMS 마스터 키</strong>입니다.<br>
+          3. 문서가 필요하면, 먼저 은행 금고에서 열쇠를 꺼내고(데이터 키 복호화), 그 열쇠로 작은 금고를 엽니다(데이터 복호화).<br><br>
+          이렇게 하면 은행 금고(KMS)가 털리지 않는 한, 작은 금고(암호화된 데이터)만으로는 문서를 볼 수 없습니다.
+        </p>
+      </div>
+
+      <h4>암호화 과정</h4>
+      <ol>
+        <li><code>GenerateDataKey</code> API를 호출하여 평문 데이터 키와 암호화된 데이터 키를 받습니다</li>
+        <li>평문 데이터 키로 데이터를 암호화합니다 (클라이언트 측에서)</li>
+        <li>평문 데이터 키를 메모리에서 즉시 삭제합니다</li>
+        <li>암호화된 데이터 키와 암호화된 데이터를 함께 저장합니다</li>
+      </ol>
+
+      <h4>복호화 과정</h4>
+      <ol>
+        <li>저장소에서 암호화된 데이터 키와 암호화된 데이터를 가져옵니다</li>
+        <li>KMS에 <code>Decrypt</code> API를 호출하여 암호화된 데이터 키를 복호화합니다</li>
+        <li>복호화된 평문 데이터 키로 데이터를 복호화합니다</li>
+        <li>평문 데이터 키를 메모리에서 즉시 삭제합니다</li>
+      </ol>
+
+      <div class="diagram">
+        <div class="diagram-title">봉투 암호화 프로세스</div>
+        <div class="diagram-row">
+          <div style="font-weight:700; color:var(--sec-dark); width:100%; text-align:center; margin-bottom:0.5rem;">암호화 과정</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box compute">
+            <div class="box-title">애플리케이션</div>
+            <div class="box-sub">GenerateDataKey 호출</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box encryption">
+            <div class="box-title">AWS KMS</div>
+            <div class="box-sub">마스터 키로 데이터 키 생성</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-col">
+            <div class="diagram-box security">
+              <div class="box-title">평문 데이터 키</div>
+              <div class="box-sub">데이터 암호화에 사용</div>
+            </div>
+            <div class="diagram-box encryption">
+              <div class="box-title">암호화된 데이터 키</div>
+              <div class="box-sub">데이터와 함께 저장</div>
+            </div>
+          </div>
+        </div>
+        <div class="diagram-row" style="margin-top:1.5rem;">
+          <div style="font-weight:700; color:var(--sec-dark); width:100%; text-align:center; margin-bottom:0.5rem;">복호화 과정</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box storage">
+            <div class="box-title">저장소</div>
+            <div class="box-sub">암호화된 데이터 + 암호화된 키</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box encryption">
+            <div class="box-title">AWS KMS</div>
+            <div class="box-sub">Decrypt로 데이터 키 복호화</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box compute">
+            <div class="box-title">애플리케이션</div>
+            <div class="box-sub">평문 데이터 키로 데이터 복호화</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box concept">
+        <div class="info-box-title">봉투 암호화의 장점</div>
+        <p>
+          1. <strong>성능</strong>: 대용량 데이터를 로컬에서 빠르게 암호화 (KMS API 호출 최소화)<br>
+          2. <strong>보안</strong>: 마스터 키가 KMS 외부로 절대 노출되지 않음 (HSM에서 보호)<br>
+          3. <strong>확장성</strong>: 각 데이터에 고유한 데이터 키 사용 가능 (한 키가 유출되어도 다른 데이터는 안전)<br>
+          4. <strong>비용</strong>: KMS API 호출 횟수 감소 (데이터 키 생성/복호화만 호출)
+        </p>
+      </div>
+
+      <h3>KMS 주요 API</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>API</th>
+            <th>설명</th>
+            <th>사용 사례</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>CreateKey</code></td>
+            <td>새로운 KMS 키 생성</td>
+            <td>고객 관리형 키 생성</td>
+          </tr>
+          <tr>
+            <td><code>Encrypt</code></td>
+            <td>최대 4KB 데이터를 직접 암호화</td>
+            <td>비밀번호, 토큰 등 소량 데이터</td>
+          </tr>
+          <tr>
+            <td><code>Decrypt</code></td>
+            <td>KMS로 암호화된 데이터 복호화</td>
+            <td>데이터 키 복호화, 소량 데이터 복호화</td>
+          </tr>
+          <tr>
+            <td><code>GenerateDataKey</code></td>
+            <td>데이터 키 생성 (평문 + 암호화본)</td>
+            <td>봉투 암호화의 암호화 단계</td>
+          </tr>
+          <tr>
+            <td><code>GenerateDataKeyWithoutPlaintext</code></td>
+            <td>암호화된 데이터 키만 생성</td>
+            <td>즉시 사용하지 않을 때</td>
+          </tr>
+          <tr>
+            <td><code>ReEncrypt</code></td>
+            <td>다른 KMS 키로 재암호화</td>
+            <td>키 마이그레이션</td>
+          </tr>
+          <tr>
+            <td><code>EnableKeyRotation</code></td>
+            <td>자동 키 로테이션 활성화</td>
+            <td>연간 자동 로테이션</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ======================================== -->
+    <!-- 섹션 3: KMS 키 생성 & 키 정책 -->
+    <!-- ======================================== -->
+    <section class="content-section" id="kms-key-policy">
+      <h2>3. KMS 키 생성 & 키 정책</h2>
+
+      <p>
+        KMS 키의 접근 제어는 <strong>키 정책(Key Policy)</strong>을 통해 이루어집니다.
+        키 정책은 해당 KMS 키에 대한 접근 권한을 정의하는 리소스 기반 정책으로,
+        IAM 정책과 함께 작동하여 세분화된 접근 제어를 구현합니다.
+      </p>
+
+      <h3>키 정책의 중요성</h3>
+
+      <div class="info-box danger">
+        <div class="info-box-title">키 정책 없이는 키에 접근할 수 없습니다</div>
+        <p>
+          KMS 키의 접근 제어에서 가장 중요한 점은, <strong>키 정책이 IAM 정책보다 우선</strong>한다는 것입니다.
+          키 정책에서 허용하지 않으면, 루트 사용자조차 해당 키에 접근할 수 없습니다.
+          키 정책에서 IAM 정책을 통한 접근을 허용하는 구문이 있어야만 IAM 정책의 KMS 권한이 작동합니다.
+          잘못된 키 정책을 설정하면 키에 대한 접근을 영구히 잃을 수 있으므로 극히 주의해야 합니다.
+        </p>
+      </div>
+
+      <h3>키 정책 구조 (JSON)</h3>
+
+      <p>ShopEasy에서 사용할 KMS 키 정책 예제:</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Id": "shopeasy-kms-key-policy",
+  "Statement": [
+    {
+      "Sid": "EnableRootAccountFullAccess",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:root"
+      },
+      "Action": "kms:*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowKeyAdministration",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:role/ShopEasy-SecurityAdmin"
+      },
+      "Action": [
+        "kms:Create*",
+        "kms:Describe*",
+        "kms:Enable*",
+        "kms:List*",
+        "kms:Put*",
+        "kms:Update*",
+        "kms:Revoke*",
+        "kms:Disable*",
+        "kms:Get*",
+        "kms:Delete*",
+        "kms:TagResource",
+        "kms:UntagResource",
+        "kms:ScheduleKeyDeletion",
+        "kms:CancelKeyDeletion"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowKeyUsage",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": [
+          "arn:aws:iam::123456789012:role/ShopEasy-EC2-AppRole",
+          "arn:aws:iam::123456789012:role/ShopEasy-Lambda-Role"
+        ]
+      },
+      "Action": [
+        "kms:Encrypt",
+        "kms:Decrypt",
+        "kms:ReEncrypt*",
+        "kms:GenerateDataKey*",
+        "kms:DescribeKey"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowAttachmentOfPersistentResources",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": [
+          "arn:aws:iam::123456789012:role/ShopEasy-EC2-AppRole"
+        ]
+      },
+      "Action": [
+        "kms:CreateGrant",
+        "kms:ListGrants",
+        "kms:RevokeGrant"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "Bool": {
+          "kms:GrantIsForAWSResource": "true"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>키 관리자 vs 키 사용자</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>구분</th>
+            <th>키 관리자 (Key Administrator)</th>
+            <th>키 사용자 (Key User)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>역할</strong></td>
+            <td>키의 생명주기 관리</td>
+            <td>키를 사용한 암호화/복호화</td>
+          </tr>
+          <tr>
+            <td><strong>주요 권한</strong></td>
+            <td>Create, Enable, Disable, Delete, Update, Tag</td>
+            <td>Encrypt, Decrypt, GenerateDataKey</td>
+          </tr>
+          <tr>
+            <td><strong>ShopEasy 대상</strong></td>
+            <td>보안 관리자 (SecurityAdmin 역할)</td>
+            <td>앱 서버 역할, Lambda 역할</td>
+          </tr>
+          <tr>
+            <td><strong>데이터 접근</strong></td>
+            <td>키 관리만 가능, 데이터 암/복호화 불가</td>
+            <td>키 사용만 가능, 키 설정 변경 불가</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">직무 분리 (Separation of Duties)</div>
+        <p>
+          키 관리자와 키 사용자를 분리하는 것은 <strong>직무 분리</strong> 원칙의 핵심입니다.
+          보안 관리자가 키를 생성하고 정책을 관리하지만, 실제 데이터를 암복호화할 수는 없습니다.
+          반대로 개발팀의 앱 서버 역할은 데이터를 암복호화할 수 있지만, 키를 삭제하거나 정책을 변경할 수 없습니다.
+          이를 통해 한 사람이 단독으로 보안을 우회하는 것을 방지합니다.
+        </p>
+      </div>
+
+      <!-- Lab: KMS 키 생성 -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: ShopEasy KMS 키 생성 실습</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">AWS 콘솔에서 KMS 키 생성</div>
+            <p>AWS 콘솔 > KMS > 고객 관리형 키 > 키 생성을 클릭합니다.</p>
+            <ul>
+              <li><strong>키 유형</strong>: 대칭 (Symmetric)</li>
+              <li><strong>키 사용</strong>: 암호화 및 복호화</li>
+              <li><strong>별칭(Alias)</strong>: <code>alias/shopeasy-data-key</code></li>
+              <li><strong>설명</strong>: ShopEasy 이커머스 데이터 암호화용 키</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">키 관리자 설정</div>
+            <p>키 관리 권한을 부여할 IAM 역할/사용자를 선택합니다:</p>
+            <ul>
+              <li>역할: <code>ShopEasy-SecurityAdmin</code></li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">키 사용 권한 설정</div>
+            <p>키를 사용하여 암/복호화할 IAM 역할/사용자를 선택합니다:</p>
+            <ul>
+              <li>역할: <code>ShopEasy-EC2-AppRole</code></li>
+              <li>역할: <code>ShopEasy-Lambda-Role</code></li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">AWS CLI로 KMS 키 생성 (대안)</div>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># KMS 키 생성
+aws kms create-key \
+  --description "ShopEasy 이커머스 데이터 암호화용 키" \
+  --key-usage ENCRYPT_DECRYPT \
+  --key-spec SYMMETRIC_DEFAULT \
+  --tags TagKey=Project,TagValue=ShopEasy TagKey=Environment,TagValue=production
+
+# 별칭 추가
+aws kms create-alias \
+  --alias-name alias/shopeasy-data-key \
+  --target-key-id xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+
+# 키 정보 확인
+aws kms describe-key --key-id alias/shopeasy-data-key
+
+# 키 정책 확인
+aws kms get-key-policy \
+  --key-id alias/shopeasy-data-key \
+  --policy-name default</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">암호화/복호화 테스트</div>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 텍스트 암호화 (Encrypt API - 4KB 이하)
+aws kms encrypt \
+  --key-id alias/shopeasy-data-key \
+  --plaintext "ShopEasy 고객 비밀번호 예시" \
+  --output text --query CiphertextBlob
+
+# 복호화
+aws kms decrypt \
+  --ciphertext-blob fileb://encrypted_data.bin \
+  --output text --query Plaintext | base64 --decode
+
+# 데이터 키 생성 (봉투 암호화용)
+aws kms generate-data-key \
+  --key-id alias/shopeasy-data-key \
+  --key-spec AES_256
+
+# 결과: Plaintext (평문 데이터 키) + CiphertextBlob (암호화된 데이터 키)</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================== -->
+    <!-- 섹션 4: 키 로테이션 -->
+    <!-- ======================================== -->
+    <section class="content-section" id="key-rotation">
+      <h2>4. 키 로테이션</h2>
+
+      <p>
+        키 로테이션은 암호화 키를 주기적으로 교체하는 보안 관행입니다.
+        키가 유출되었을 때의 영향을 최소화하고, 보안 규정 준수(PCI-DSS, ISMS 등)를 위해 반드시 필요합니다.
+        AWS KMS는 자동 로테이션과 수동 로테이션 두 가지 방식을 지원합니다.
+      </p>
+
+      <h3>자동 로테이션 (Automatic Rotation)</h3>
+
+      <div class="info-box concept">
+        <div class="info-box-title">자동 로테이션의 동작 방식</div>
+        <p>
+          자동 로테이션을 활성화하면 KMS가 <strong>매년(365일마다)</strong> 새로운 암호화 키 구성 요소(Key Material)를 자동으로 생성합니다.
+          중요한 점은 <strong>KMS 키 ID와 ARN은 변경되지 않는다</strong>는 것입니다.
+          KMS는 이전 키 구성 요소를 모두 보관하므로, 이전 키로 암호화된 데이터도 문제없이 복호화할 수 있습니다.
+          새로운 암호화는 자동으로 최신 키 구성 요소를 사용합니다.
+        </p>
+      </div>
+
+      <ul>
+        <li><strong>대상</strong>: 고객 관리형 대칭 키만 지원 (비대칭 키, 가져온 키 구성 요소는 불가)</li>
+        <li><strong>주기</strong>: 매년 1회 (365일)</li>
+        <li><strong>호환성</strong>: 기존 암호화된 데이터에 영향 없음</li>
+        <li><strong>투명성</strong>: 애플리케이션 코드 변경 불필요</li>
+      </ul>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 자동 로테이션 활성화
+aws kms enable-key-rotation \
+  --key-id alias/shopeasy-data-key
+
+# 자동 로테이션 상태 확인
+aws kms get-key-rotation-status \
+  --key-id alias/shopeasy-data-key
+
+# 출력 예시:
+# {
+#   "KeyRotationEnabled": true
+# }</code></pre>
+      </div>
+
+      <h3>수동 로테이션 (Manual Rotation)</h3>
+
+      <p>
+        수동 로테이션은 새로운 KMS 키를 생성하고, 기존 키의 <strong>별칭(Alias)</strong>을 새 키로 변경하는 방식입니다.
+        자동 로테이션이 지원되지 않는 키 유형(비대칭 키, 가져온 키)이나,
+        1년보다 짧은 주기로 로테이션이 필요한 경우에 사용합니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 1. 새로운 KMS 키 생성
+aws kms create-key \
+  --description "ShopEasy 데이터 키 v2 (수동 로테이션)" \
+  --tags TagKey=Project,TagValue=ShopEasy
+
+# 2. 기존 별칭을 새 키로 업데이트
+aws kms update-alias \
+  --alias-name alias/shopeasy-data-key \
+  --target-key-id NEW_KEY_ID
+
+# 3. 이후 새로운 암호화는 자동으로 새 키 사용
+# 4. 기존 데이터 복호화를 위해 이전 키는 유지 (삭제하지 않음)</code></pre>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">수동 로테이션 주의사항</div>
+        <p>
+          수동 로테이션 시 별칭만 변경하므로, 애플리케이션에서 별칭(<code>alias/shopeasy-data-key</code>)을 사용해야 합니다.
+          키 ID를 직접 사용하면 로테이션 후 새 키로 자동 전환되지 않습니다.
+          또한, 이전 키는 기존 데이터 복호화를 위해 <strong>반드시 유지</strong>해야 합니다.
+          이전 키를 삭제하면 해당 키로 암호화된 모든 데이터를 복구할 수 없게 됩니다.
+        </p>
+      </div>
+
+      <h3>자동 vs 수동 로테이션 비교</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>구분</th>
+            <th>자동 로테이션</th>
+            <th>수동 로테이션</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>키 ID</strong></td>
+            <td>변경 없음 (동일한 키 ID)</td>
+            <td>새로운 키 ID 생성</td>
+          </tr>
+          <tr>
+            <td><strong>주기</strong></td>
+            <td>매년 1회 (고정)</td>
+            <td>원하는 주기 설정 가능</td>
+          </tr>
+          <tr>
+            <td><strong>코드 변경</strong></td>
+            <td>불필요</td>
+            <td>별칭 사용 시 불필요</td>
+          </tr>
+          <tr>
+            <td><strong>이전 데이터 복호화</strong></td>
+            <td>자동 지원 (KMS가 이전 키 보관)</td>
+            <td>이전 키 수동 유지 필요</td>
+          </tr>
+          <tr>
+            <td><strong>지원 키 유형</strong></td>
+            <td>대칭 키만</td>
+            <td>모든 유형</td>
+          </tr>
+          <tr>
+            <td><strong>관리 부담</strong></td>
+            <td>낮음</td>
+            <td>높음</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>키 로테이션 모범 사례</h3>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">KMS 키 관리 모범 사례</div>
+        <p>
+          1. <strong>자동 로테이션 활성화</strong>: 고객 관리형 대칭 키에는 반드시 자동 로테이션을 활성화하세요.<br>
+          2. <strong>별칭 사용</strong>: 애플리케이션에서는 항상 키 별칭(alias)을 사용하세요. 로테이션 시 코드 변경이 불필요합니다.<br>
+          3. <strong>키 삭제 주의</strong>: KMS 키 삭제 시 7~30일 대기 기간이 있습니다. 이 기간 동안 삭제를 취소할 수 있습니다.<br>
+          4. <strong>태깅</strong>: 키에 Project, Environment 등 태그를 달아 관리하세요.<br>
+          5. <strong>CloudTrail 모니터링</strong>: KMS API 호출을 CloudTrail로 모니터링하여 비인가 키 사용을 탐지하세요.<br>
+          6. <strong>다중 리전 키</strong>: DR(재해 복구) 환경에서는 다중 리전 키 사용을 고려하세요.
+        </p>
+      </div>
+
+      <h3>KMS 키 삭제 주의사항</h3>
+
+      <div class="info-box danger">
+        <div class="info-box-title">키 삭제는 되돌릴 수 없습니다</div>
+        <p>
+          KMS 키를 삭제하면 해당 키로 암호화된 <strong>모든 데이터를 영구적으로 복구할 수 없게</strong> 됩니다.
+          키 삭제를 예약하면 7~30일의 대기 기간이 적용되며, 이 기간 동안에는 취소가 가능합니다.
+          대기 기간 동안 CloudTrail에서 해당 키를 사용하려는 API 호출이 있는지 반드시 확인하세요.
+          키가 더 이상 사용되지 않음을 확인한 후에만 삭제를 진행해야 합니다.
+        </p>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 키 삭제 예약 (30일 대기 기간)
+aws kms schedule-key-deletion \
+  --key-id xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx \
+  --pending-window-in-days 30
+
+# 키 삭제 취소
+aws kms cancel-key-deletion \
+  --key-id xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+
+# 삭제 대기 중인 키 확인
+aws kms list-keys --query "Keys[?contains(KeyId, 'xxxx')]"</code></pre>
+      </div>
+    </section>
+
+    <!-- 네비게이션 -->
+    <div class="chapter-nav">
+      <a href="09-network-security-lab.html" class="prev">이전: 이커머스 네트워크 보안 적용</a>
+      <a href="11-s3-security.html" class="next">다음: S3 보안</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/10-kms-encryption.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>

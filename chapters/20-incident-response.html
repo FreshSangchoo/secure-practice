@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/20-incident-response.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>보안 사고 대응 자동화 - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li><a href="#incident-response-process">보안 사고 대응 프로세스</a></li>
+      <li><a href="#aws-response-tools">AWS 사고 대응 도구</a></li>
+      <li><a href="#eventbridge-patterns">EventBridge 이벤트 패턴</a></li>
+      <li><a href="#lambda-auto-response">Lambda 자동 대응 함수</a></li>
+      <li><a href="#sns-notification">SNS 알림 설정</a></li>
+      <li><a href="#lab-guardduty-sns">실습 A: GuardDuty → SNS 알림</a></li>
+      <li><a href="#lab-auto-isolation">실습 B: EC2 자동 격리</a></li>
+      <li><a href="#runbook-guide">사고 대응 런북 작성 가이드</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 20</span>
+      <h1>보안 사고 대응 자동화</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>보안 사고 대응의 5단계 프로세스(탐지, 분석, 격리, 복구, 교훈)를 이해한다</li>
+          <li>EventBridge와 Lambda를 활용한 자동화 대응 파이프라인을 구성할 수 있다</li>
+          <li>GuardDuty 발견 사항을 SNS로 알림 전달하는 파이프라인을 구축한다</li>
+          <li>의심스러운 EC2 인스턴스를 자동으로 격리하는 시스템을 설계한다</li>
+          <li>사고 대응 런북(Runbook)을 작성하고 활용할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 섹션 1: 보안 사고 대응 프로세스 -->
+    <section class="content-section" id="incident-response-process">
+      <h2>1. 보안 사고 대응 프로세스</h2>
+
+      <p>
+        보안 사고는 "발생 여부"가 아니라 <strong>"언제 발생하느냐"</strong>의 문제입니다.
+        클라우드 환경에서는 자동화된 대응이 가능하므로, 사전에 체계적인 프로세스를 수립해두면
+        사고 발생 시 신속하고 일관되게 대응할 수 있습니다.
+      </p>
+
+      <div class="info-box concept">
+        <div class="info-box-title">NIST 사고 대응 프레임워크</div>
+        <p>
+          NIST SP 800-61에서는 보안 사고 대응을 4단계(준비, 탐지/분석, 억제/복구, 사후활동)로 정의합니다.
+          AWS에서는 이를 클라우드에 맞게 5단계로 세분화하여 적용합니다.
+        </p>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">보안 사고 대응 5단계 프로세스</div>
+        <div class="diagram-row">
+          <div class="diagram-box detective">
+            <div class="box-title">1. 탐지</div>
+            <div class="box-sub">Detection</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box monitor">
+            <div class="box-title">2. 분석</div>
+            <div class="box-sub">Analysis</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box security">
+            <div class="box-title">3. 격리</div>
+            <div class="box-sub">Containment</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box compute">
+            <div class="box-title">4. 복구</div>
+            <div class="box-sub">Recovery</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box iam">
+            <div class="box-title">5. 교훈</div>
+            <div class="box-sub">Lessons Learned</div>
+          </div>
+        </div>
+      </div>
+
+      <h3>각 단계별 상세 활동</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>단계</th>
+            <th>주요 활동</th>
+            <th>AWS 서비스</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>1. 탐지(Detection)</strong></td>
+            <td>이상 행위 감지, 알림 수신, 로그 이상 패턴 식별</td>
+            <td>GuardDuty, CloudWatch, Security Hub</td>
+          </tr>
+          <tr>
+            <td><strong>2. 분석(Analysis)</strong></td>
+            <td>영향 범위 파악, 공격 벡터 분석, 타임라인 구성</td>
+            <td>CloudTrail, VPC Flow Logs, Detective</td>
+          </tr>
+          <tr>
+            <td><strong>3. 격리(Containment)</strong></td>
+            <td>피해 확산 방지, 네트워크 격리, 자격증명 무효화</td>
+            <td>Security Groups, IAM, Lambda</td>
+          </tr>
+          <tr>
+            <td><strong>4. 복구(Recovery)</strong></td>
+            <td>시스템 복원, 패치 적용, 정상 운영 확인</td>
+            <td>AMI, Snapshots, CloudFormation</td>
+          </tr>
+          <tr>
+            <td><strong>5. 교훈(Lessons Learned)</strong></td>
+            <td>사후 분석, 프로세스 개선, 재발 방지 대책 수립</td>
+            <td>Systems Manager, Config Rules</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 소방서의 화재 대응</div>
+        <p>
+          화재 경보가 울리면(탐지) → 화재 규모를 파악하고(분석) → 방화문을 닫아 확산을 방지하며(격리) →
+          진화 후 복구하고(복구) → 원인 조사와 예방 대책을 세웁니다(교훈).
+          클라우드 보안 사고 대응도 동일한 흐름입니다.
+        </p>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">사전 준비가 핵심</div>
+        <p>
+          사고 대응의 가장 중요한 부분은 "사전 준비"입니다. 사고가 발생하기 전에 대응 자동화 파이프라인을
+          구축하고, 런북을 작성하며, 정기적으로 모의 훈련(Game Day)을 실시해야 합니다.
+          AWS에서는 이를 "준비(Preparation)" 단계라고 하며, 이 챕터의 핵심 주제입니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 2: AWS에서의 사고 대응 도구 -->
+    <section class="content-section" id="aws-response-tools">
+      <h2>2. AWS에서의 사고 대응 도구</h2>
+
+      <p>
+        AWS는 사고 대응의 각 단계를 지원하는 다양한 서비스를 제공합니다.
+        이전 챕터에서 학습한 서비스들이 사고 대응 맥락에서 어떻게 활용되는지 살펴보겠습니다.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">사고 대응 자동화 아키텍처</div>
+        <div class="diagram-row">
+          <div class="diagram-box detective">
+            <div class="box-title">GuardDuty</div>
+            <div class="box-sub">위협 탐지</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box serverless">
+            <div class="box-title">EventBridge</div>
+            <div class="box-sub">이벤트 라우팅</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box serverless">
+            <div class="box-title">Lambda</div>
+            <div class="box-sub">자동 대응</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box queue">
+            <div class="box-title">SNS</div>
+            <div class="box-sub">알림 전송</div>
+          </div>
+        </div>
+      </div>
+
+      <h3>CloudTrail - 감사 로그의 핵심</h3>
+      <p>
+        CloudTrail은 AWS 계정에서 발생하는 모든 API 호출을 기록합니다.
+        사고 분석 시 "누가, 언제, 무엇을, 어디서" 했는지를 파악하는 데 필수적입니다.
+      </p>
+      <ul>
+        <li><strong>관리 이벤트:</strong> 리소스 생성/삭제/변경 등 관리 작업 기록</li>
+        <li><strong>데이터 이벤트:</strong> S3 객체 접근, Lambda 호출 등 데이터 레벨 기록</li>
+        <li><strong>CloudTrail Lake:</strong> SQL 쿼리로 이벤트를 분석할 수 있는 관리형 데이터 레이크</li>
+      </ul>
+
+      <h3>GuardDuty - 지능형 위협 탐지</h3>
+      <p>
+        머신러닝 기반으로 악의적 활동과 비정상 행동을 자동으로 탐지합니다.
+        탐지된 결과(Finding)는 EventBridge를 통해 자동 대응 워크플로우를 트리거할 수 있습니다.
+      </p>
+      <ul>
+        <li><strong>Finding 유형:</strong> Recon, UnauthorizedAccess, Trojan, CryptoCurrency 등</li>
+        <li><strong>심각도:</strong> Low(1.0-3.9), Medium(4.0-6.9), High(7.0-8.9), Critical(9.0-10.0)</li>
+        <li><strong>데이터 소스:</strong> VPC Flow Logs, DNS Logs, CloudTrail, EKS Audit Logs</li>
+      </ul>
+
+      <h3>Security Hub - 통합 보안 대시보드</h3>
+      <p>
+        GuardDuty, Config, Inspector 등의 발견 사항을 중앙에서 통합 관리합니다.
+        ASFF(AWS Security Finding Format)로 표준화된 데이터를 제공합니다.
+      </p>
+
+      <h3>Systems Manager - 운영 자동화</h3>
+      <p>
+        Automation 런북을 통해 사고 대응 절차를 코드화할 수 있습니다.
+        Run Command로 여러 인스턴스에 동시에 대응 조치를 실행할 수 있습니다.
+      </p>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">사고 대응 도구 구성 원칙</div>
+        <p>
+          1) 모든 리전에서 CloudTrail과 GuardDuty를 활성화하세요.<br>
+          2) Security Hub로 발견 사항을 중앙 집중화하세요.<br>
+          3) EventBridge 규칙으로 자동 대응을 설정하세요.<br>
+          4) 대응 Lambda 함수는 별도의 보안 계정에서 관리하세요.
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 3: EventBridge 이벤트 패턴 -->
+    <section class="content-section" id="eventbridge-patterns">
+      <h2>3. EventBridge 이벤트 패턴</h2>
+
+      <p>
+        Amazon EventBridge는 AWS 서비스에서 발생하는 이벤트를 감지하고
+        지정된 대상(Lambda, SNS, SQS 등)으로 라우팅하는 서버리스 이벤트 버스입니다.
+        보안 사고 대응에서 "탐지 → 대응"을 연결하는 핵심 서비스입니다.
+      </p>
+
+      <h3>GuardDuty Finding 이벤트 패턴</h3>
+      <p>
+        GuardDuty가 위협을 탐지하면 EventBridge에 이벤트를 발행합니다.
+        심각도별로 필터링하여 적절한 대응을 트리거할 수 있습니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "source": ["aws.guardduty"],
+  "detail-type": ["GuardDuty Finding"],
+  "detail": {
+    "severity": [
+      { "numeric": [">=", 7.0] }
+    ]
+  }
+}</code></pre>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">심각도별 대응 전략</div>
+        <p>
+          <strong>Critical/High (7.0+):</strong> 즉시 자동 격리 + 알림 (Lambda + SNS)<br>
+          <strong>Medium (4.0-6.9):</strong> 알림만 전송 (SNS), 수동 분석 후 판단<br>
+          <strong>Low (1.0-3.9):</strong> 로그 기록, 주기적 리뷰
+        </p>
+      </div>
+
+      <h3>특정 유형의 GuardDuty Finding 필터링</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "source": ["aws.guardduty"],
+  "detail-type": ["GuardDuty Finding"],
+  "detail": {
+    "type": [
+      { "prefix": "UnauthorizedAccess:" },
+      { "prefix": "CryptoCurrency:" },
+      { "prefix": "Trojan:" }
+    ]
+  }
+}</code></pre>
+      </div>
+
+      <h3>AWS Config 규칙 비준수 이벤트 패턴</h3>
+      <p>
+        Config 규칙에서 리소스가 비준수로 변경될 때 자동 대응을 트리거합니다.
+        예를 들어, 보안그룹이 0.0.0.0/0으로 열렸을 때 자동으로 규칙을 제거할 수 있습니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "source": ["aws.config"],
+  "detail-type": ["Config Rules Compliance Change"],
+  "detail": {
+    "messageType": ["ComplianceChangeNotification"],
+    "newEvaluationResult": {
+      "complianceType": ["NON_COMPLIANT"]
+    },
+    "configRuleName": [
+      "restricted-ssh",
+      "restricted-common-ports",
+      "s3-bucket-public-read-prohibited"
+    ]
+  }
+}</code></pre>
+      </div>
+
+      <h3>IAM 관련 보안 이벤트 패턴</h3>
+      <p>
+        CloudTrail을 통해 IAM 관련 위험한 API 호출을 감지합니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "source": ["aws.iam"],
+  "detail-type": ["AWS API Call via CloudTrail"],
+  "detail": {
+    "eventSource": ["iam.amazonaws.com"],
+    "eventName": [
+      "CreateAccessKey",
+      "CreateUser",
+      "AttachUserPolicy",
+      "PutUserPolicy",
+      "CreateLoginProfile"
+    ]
+  }
+}</code></pre>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">EventBridge 규칙 설계 주의사항</div>
+        <p>
+          이벤트 패턴이 너무 넓으면 불필요한 알림이 폭주하고, 너무 좁으면 실제 위협을 놓칠 수 있습니다.
+          초기에는 알림 위주로 시작하고, 오탐(false positive)을 분석하면서 점진적으로 자동 대응 범위를 넓히세요.
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 4: Lambda 자동 대응 함수 -->
+    <section class="content-section" id="lambda-auto-response">
+      <h2>4. Lambda 자동 대응 함수</h2>
+
+      <p>
+        EventBridge가 보안 이벤트를 감지하면, Lambda 함수를 호출하여 자동으로 대응 조치를 실행합니다.
+        가장 대표적인 자동 대응은 <strong>보안그룹 격리</strong>와 <strong>IAM 액세스 키 비활성화</strong>입니다.
+      </p>
+
+      <h3>자동 대응 함수 1: EC2 인스턴스 보안그룹 격리</h3>
+      <p>
+        의심스러운 활동이 탐지된 EC2 인스턴스의 보안그룹을
+        모든 트래픽을 차단하는 격리용 보안그룹으로 교체합니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">python</span><button class="copy-btn">복사</button></div>
+        <pre><code>import json
+import boto3
+import os
+
+ec2 = boto3.client('ec2')
+sns = boto3.client('sns')
+
+# 격리용 보안그룹 ID (모든 인바운드/아웃바운드 차단)
+ISOLATION_SG_ID = os.environ['ISOLATION_SG_ID']
+SNS_TOPIC_ARN = os.environ['SNS_TOPIC_ARN']
+
+def lambda_handler(event, context):
+    """
+    GuardDuty Finding에서 EC2 인스턴스 ID를 추출하고
+    해당 인스턴스의 보안그룹을 격리용 SG로 교체
+    """
+    detail = event['detail']
+    finding_type = detail['type']
+    severity = detail['severity']
+
+    # EC2 인스턴스 ID 추출
+    instance_id = detail.get('resource', {}).get(
+        'instanceDetails', {}
+    ).get('instanceId')
+
+    if not instance_id:
+        print("EC2 인스턴스 ID를 찾을 수 없습니다.")
+        return
+
+    # 현재 보안그룹 정보 저장 (복구를 위해)
+    instance = ec2.describe_instances(
+        InstanceIds=[instance_id]
+    )['Reservations'][0]['Instances'][0]
+
+    original_sgs = [
+        sg['GroupId']
+        for sg in instance['SecurityGroups']
+    ]
+
+    # 태그에 원래 보안그룹 정보 저장
+    ec2.create_tags(
+        Resources=[instance_id],
+        Tags=[
+            {
+                'Key': 'OriginalSecurityGroups',
+                'Value': ','.join(original_sgs)
+            },
+            {
+                'Key': 'IsolatedAt',
+                'Value': detail.get('updatedAt', 'unknown')
+            },
+            {
+                'Key': 'IsolationReason',
+                'Value': finding_type
+            }
+        ]
+    )
+
+    # 보안그룹을 격리용 SG로 교체
+    ec2.modify_instance_attribute(
+        InstanceId=instance_id,
+        Groups=[ISOLATION_SG_ID]
+    )
+
+    # SNS 알림 전송
+    message = {
+        'action': 'EC2 인스턴스 격리 완료',
+        'instance_id': instance_id,
+        'finding_type': finding_type,
+        'severity': severity,
+        'original_security_groups': original_sgs,
+        'isolation_sg': ISOLATION_SG_ID
+    }
+
+    sns.publish(
+        TopicArn=SNS_TOPIC_ARN,
+        Subject=f'[긴급] EC2 인스턴스 격리: {instance_id}',
+        Message=json.dumps(message, indent=2, ensure_ascii=False)
+    )
+
+    print(f"인스턴스 {instance_id} 격리 완료")
+    return {
+        'statusCode': 200,
+        'body': f'Instance {instance_id} isolated'
+    }</code></pre>
+      </div>
+
+      <h3>자동 대응 함수 2: IAM 액세스 키 비활성화</h3>
+      <p>
+        유출이 의심되는 IAM 액세스 키를 즉시 비활성화합니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">python</span><button class="copy-btn">복사</button></div>
+        <pre><code>import json
+import boto3
+import os
+
+iam = boto3.client('iam')
+sns = boto3.client('sns')
+
+SNS_TOPIC_ARN = os.environ['SNS_TOPIC_ARN']
+
+def lambda_handler(event, context):
+    """
+    GuardDuty Finding에서 IAM 액세스 키 정보를 추출하고
+    해당 키를 비활성화
+    """
+    detail = event['detail']
+    finding_type = detail['type']
+
+    # IAM 액세스 키 정보 추출
+    access_key_id = detail.get('resource', {}).get(
+        'accessKeyDetails', {}
+    ).get('accessKeyId')
+
+    user_name = detail.get('resource', {}).get(
+        'accessKeyDetails', {}
+    ).get('userName')
+
+    if not access_key_id or not user_name:
+        print("IAM 액세스 키 정보를 찾을 수 없습니다.")
+        return
+
+    # 액세스 키 비활성화
+    iam.update_access_key(
+        UserName=user_name,
+        AccessKeyId=access_key_id,
+        Status='Inactive'
+    )
+
+    # 해당 사용자의 모든 세션 무효화를 위한
+    # 인라인 정책 추가 (선택적)
+    deny_policy = {
+        "Version": "2012-10-17",
+        "Statement": [{
+            "Effect": "Deny",
+            "Action": "*",
+            "Resource": "*",
+            "Condition": {
+                "DateLessThan": {
+                    "aws:TokenIssueTime":
+                        detail.get('updatedAt', '2024-01-01T00:00:00Z')
+                }
+            }
+        }]
+    }
+
+    iam.put_user_policy(
+        UserName=user_name,
+        PolicyName='DenyCompromisedSessions',
+        PolicyDocument=json.dumps(deny_policy)
+    )
+
+    # SNS 알림 전송
+    message = {
+        'action': 'IAM 액세스 키 비활성화 완료',
+        'user_name': user_name,
+        'access_key_id': access_key_id,
+        'finding_type': finding_type,
+        'additional_action': '기존 세션 무효화 정책 적용'
+    }
+
+    sns.publish(
+        TopicArn=SNS_TOPIC_ARN,
+        Subject=f'[긴급] IAM 키 비활성화: {user_name}',
+        Message=json.dumps(message, indent=2, ensure_ascii=False)
+    )
+
+    print(f"사용자 {user_name}의 액세스 키 비활성화 완료")
+    return {
+        'statusCode': 200,
+        'body': f'Access key {access_key_id} disabled'
+    }</code></pre>
+      </div>
+
+      <div class="info-box danger">
+        <div class="info-box-title">자동 대응의 위험성</div>
+        <p>
+          자동 격리는 정상 서비스에 영향을 줄 수 있습니다. 반드시 다음을 고려하세요:<br>
+          1) 프로덕션 환경에 적용 전 스테이징에서 충분히 테스트하세요.<br>
+          2) 격리 전 원래 상태를 태그에 저장하여 복구가 가능하도록 하세요.<br>
+          3) 자동 격리 대상을 중요 인스턴스에서는 제외하는 로직을 추가하세요.<br>
+          4) 모든 자동 대응에 SNS 알림을 포함하여 담당자가 즉시 인지하도록 하세요.
+        </p>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">Lambda 대응 함수 권한 원칙</div>
+        <p>
+          대응 Lambda 함수는 격리 작업에 필요한 최소 권한만 부여해야 합니다.
+          예를 들어, EC2 격리 함수에는 <code>ec2:ModifyInstanceAttribute</code>,
+          <code>ec2:DescribeInstances</code>, <code>ec2:CreateTags</code> 권한만 부여하세요.
+          실수로 과도한 권한을 부여하면 공격자가 Lambda 함수 자체를 악용할 수 있습니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 5: SNS 알림 설정 -->
+    <section class="content-section" id="sns-notification">
+      <h2>5. SNS 알림 설정</h2>
+
+      <p>
+        Amazon SNS(Simple Notification Service)를 사용하여 보안 이벤트를 이메일, SMS,
+        Slack 등으로 전달할 수 있습니다. 적절한 알림 설정은 보안 대응의 첫 걸음입니다.
+      </p>
+
+      <h3>SNS 토픽 생성 (CLI)</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+        <pre><code># SNS 토픽 생성
+aws sns create-topic --name security-alerts-high
+
+# 이메일 구독 추가
+aws sns subscribe \
+  --topic-arn arn:aws:sns:ap-northeast-2:123456789012:security-alerts-high \
+  --protocol email \
+  --notification-endpoint security-team@example.com
+
+# 구독 확인 (이메일로 전송된 확인 링크 클릭 필요)</code></pre>
+      </div>
+
+      <h3>Slack 연동 (Lambda를 통한 Webhook)</h3>
+      <p>
+        SNS 메시지를 Lambda로 전달하고, Lambda에서 Slack Webhook URL로 전송하는 구조입니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">python</span><button class="copy-btn">복사</button></div>
+        <pre><code>import json
+import urllib3
+import os
+
+http = urllib3.PoolManager()
+SLACK_WEBHOOK_URL = os.environ['SLACK_WEBHOOK_URL']
+
+def lambda_handler(event, context):
+    """
+    SNS 메시지를 Slack 채널로 전달
+    """
+    for record in event['Records']:
+        sns_message = record['Sns']
+        subject = sns_message.get('Subject', '보안 알림')
+        message = sns_message.get('Message', '')
+
+        # Slack 메시지 포맷
+        slack_message = {
+            "blocks": [
+                {
+                    "type": "header",
+                    "text": {
+                        "type": "plain_text",
+                        "text": f"🚨 {subject}"
+                    }
+                },
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"```{message}```"
+                    }
+                },
+                {
+                    "type": "context",
+                    "elements": [{
+                        "type": "mrkdwn",
+                        "text": "AWS Security Alert | 즉시 확인 필요"
+                    }]
+                }
+            ]
+        }
+
+        response = http.request(
+            'POST',
+            SLACK_WEBHOOK_URL,
+            body=json.dumps(slack_message),
+            headers={'Content-Type': 'application/json'}
+        )
+
+        print(f"Slack 전송 결과: {response.status}")
+
+    return {'statusCode': 200}</code></pre>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">알림 피로도 관리</div>
+        <p>
+          알림이 너무 많으면 "알림 피로(Alert Fatigue)"가 발생하여 중요한 알림을 놓칠 수 있습니다.
+          심각도별로 채널을 분리하세요:<br>
+          <strong>High/Critical:</strong> Slack #security-urgent 채널 + 이메일 + SMS<br>
+          <strong>Medium:</strong> Slack #security-alerts 채널 + 이메일<br>
+          <strong>Low:</strong> CloudWatch 대시보드에서 주기적 리뷰
+        </p>
+      </div>
+    </section>
+
+    <!-- 실습 A: GuardDuty → SNS 알림 파이프라인 -->
+    <section class="content-section" id="lab-guardduty-sns">
+      <h2>6. 실습 A: GuardDuty 발견 → SNS 알림 파이프라인</h2>
+
+      <div class="lab-section">
+        <div class="lab-title">실습: GuardDuty Finding을 SNS로 알림 전달하기</div>
+
+        <div class="info-box concept">
+          <div class="info-box-title">실습 목표</div>
+          <p>
+            GuardDuty에서 High 이상 심각도의 Finding이 발생했을 때,
+            EventBridge를 통해 SNS 토픽으로 알림을 전송하는 파이프라인을 구성합니다.
+          </p>
+        </div>
+
+        <div class="diagram">
+          <div class="diagram-title">실습 아키텍처</div>
+          <div class="diagram-row">
+            <div class="diagram-box detective">
+              <div class="box-title">GuardDuty</div>
+              <div class="box-sub">샘플 Finding 생성</div>
+            </div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box serverless">
+              <div class="box-title">EventBridge</div>
+              <div class="box-sub">심각도 >= 7.0 필터</div>
+            </div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box queue">
+              <div class="box-title">SNS</div>
+              <div class="box-sub">이메일 알림</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">Step 1: SNS 토픽 생성</div>
+            <p>AWS 콘솔 > SNS > 주제 생성</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># CLI로 생성하는 경우
+aws sns create-topic --name guardduty-high-alerts
+
+# 이메일 구독 추가
+aws sns subscribe \
+  --topic-arn arn:aws:sns:ap-northeast-2:ACCOUNT_ID:guardduty-high-alerts \
+  --protocol email \
+  --notification-endpoint your-email@example.com
+
+# 이메일 확인 링크를 클릭하여 구독 확인</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 2: EventBridge 규칙 생성</div>
+            <p>AWS 콘솔 > EventBridge > 규칙 > 규칙 생성</p>
+            <ul>
+              <li>이름: <code>guardduty-high-severity-to-sns</code></li>
+              <li>이벤트 버스: default</li>
+              <li>규칙 유형: 이벤트 패턴이 있는 규칙</li>
+            </ul>
+            <p>이벤트 패턴을 다음과 같이 설정합니다:</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+              <pre><code>{
+  "source": ["aws.guardduty"],
+  "detail-type": ["GuardDuty Finding"],
+  "detail": {
+    "severity": [
+      { "numeric": [">=", 7.0] }
+    ]
+  }
+}</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 3: 대상(Target) 설정</div>
+            <p>EventBridge 규칙의 대상으로 SNS 토픽을 지정합니다.</p>
+            <ul>
+              <li>대상 유형: AWS 서비스</li>
+              <li>대상 선택: SNS 주제</li>
+              <li>주제: <code>guardduty-high-alerts</code></li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 4: GuardDuty 샘플 Finding 생성</div>
+            <p>테스트를 위해 GuardDuty에서 샘플 Finding을 생성합니다.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># GuardDuty 디텍터 ID 확인
+aws guardduty list-detectors
+
+# 샘플 Finding 생성
+aws guardduty create-sample-findings \
+  --detector-id YOUR_DETECTOR_ID \
+  --finding-types \
+    "UnauthorizedAccess:EC2/MaliciousIPCaller.Custom" \
+    "CryptoCurrency:EC2/BitcoinTool.B!DNS"</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 5: 결과 확인</div>
+            <p>이메일로 GuardDuty Finding 알림이 도착했는지 확인합니다.</p>
+            <ul>
+              <li>GuardDuty 콘솔에서 샘플 Finding 확인</li>
+              <li>EventBridge 콘솔에서 규칙의 호출 메트릭 확인</li>
+              <li>구독한 이메일 인박스에서 알림 수신 확인</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 실습 B: 의심 EC2 자동 격리 -->
+    <section class="content-section" id="lab-auto-isolation">
+      <h2>7. 실습 B: 의심 EC2 자동 격리</h2>
+
+      <div class="lab-section">
+        <div class="lab-title">실습: EventBridge → Lambda → 보안그룹 변경으로 자동 격리</div>
+
+        <div class="info-box concept">
+          <div class="info-box-title">실습 목표</div>
+          <p>
+            GuardDuty가 EC2 관련 High 심각도 Finding을 탐지했을 때,
+            Lambda 함수가 자동으로 해당 인스턴스의 보안그룹을 격리용 SG로 교체하고
+            SNS 알림을 전송하는 전체 파이프라인을 구성합니다.
+          </p>
+        </div>
+
+        <div class="diagram">
+          <div class="diagram-title">자동 격리 아키텍처</div>
+          <div class="diagram-row">
+            <div class="diagram-box detective">
+              <div class="box-title">GuardDuty</div>
+              <div class="box-sub">EC2 위협 탐지</div>
+            </div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box serverless">
+              <div class="box-title">EventBridge</div>
+              <div class="box-sub">이벤트 필터링</div>
+            </div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box serverless">
+              <div class="box-title">Lambda</div>
+              <div class="box-sub">SG 교체 + 태그</div>
+            </div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box security">
+              <div class="box-title">격리 SG</div>
+              <div class="box-sub">모든 트래픽 차단</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">Step 1: 격리용 보안그룹 생성</div>
+            <p>모든 인바운드/아웃바운드 트래픽을 차단하는 보안그룹을 생성합니다.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># 격리용 보안그룹 생성
+aws ec2 create-security-group \
+  --group-name isolation-sg \
+  --description "Isolation SG - No inbound/outbound traffic" \
+  --vpc-id vpc-xxxxxxxx
+
+# 기본 아웃바운드 규칙 제거 (모든 트래픽 차단)
+aws ec2 revoke-security-group-egress \
+  --group-id sg-isolation-xxxxx \
+  --ip-permissions '[{
+    "IpProtocol": "-1",
+    "FromPort": -1,
+    "ToPort": -1,
+    "IpRanges": [{"CidrIp": "0.0.0.0/0"}]
+  }]'</code></pre>
+            </div>
+            <div class="info-box warning">
+              <div class="info-box-title">포렌식 분석을 위한 선택적 아웃바운드</div>
+              <p>
+                완전한 격리 대신, 포렌식 분석을 위해 특정 관리용 IP로의 SSH(22) 아웃바운드만
+                허용하는 옵션도 고려할 수 있습니다. 이는 격리된 인스턴스를 분석해야 할 때 유용합니다.
+              </p>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 2: Lambda 실행 역할 생성</div>
+            <p>Lambda 함수에 필요한 최소 권한을 가진 IAM 역할을 생성합니다.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+              <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:ModifyInstanceAttribute",
+        "ec2:DescribeInstances",
+        "ec2:CreateTags"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "sns:Publish",
+      "Resource": "arn:aws:sns:ap-northeast-2:ACCOUNT_ID:security-alerts-high"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents"
+      ],
+      "Resource": "arn:aws:logs:*:*:*"
+    }
+  ]
+}</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 3: Lambda 함수 생성</div>
+            <p>
+              AWS 콘솔 > Lambda > 함수 생성에서 "섹션 4"의 EC2 격리 코드를 사용하여 함수를 생성합니다.
+            </p>
+            <ul>
+              <li>런타임: Python 3.12</li>
+              <li>실행 역할: Step 2에서 생성한 역할 지정</li>
+              <li>환경 변수 설정:
+                <ul>
+                  <li><code>ISOLATION_SG_ID</code>: Step 1에서 생성한 격리 SG ID</li>
+                  <li><code>SNS_TOPIC_ARN</code>: 알림용 SNS 토픽 ARN</li>
+                </ul>
+              </li>
+              <li>제한 시간: 30초</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 4: EventBridge 규칙 생성</div>
+            <p>GuardDuty EC2 관련 High Finding을 Lambda로 라우팅하는 규칙을 생성합니다.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+              <pre><code>{
+  "source": ["aws.guardduty"],
+  "detail-type": ["GuardDuty Finding"],
+  "detail": {
+    "severity": [
+      { "numeric": [">=", 7.0] }
+    ],
+    "resource": {
+      "resourceType": ["Instance"]
+    }
+  }
+}</code></pre>
+            </div>
+            <p>대상으로 Step 3에서 생성한 Lambda 함수를 지정합니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 5: 테스트 및 검증</div>
+            <p>테스트용 EC2 인스턴스를 대상으로 파이프라인을 검증합니다.</p>
+            <ul>
+              <li>테스트 EC2 인스턴스를 시작합니다</li>
+              <li>GuardDuty에서 샘플 Finding을 생성합니다</li>
+              <li>Lambda 함수 실행 로그를 CloudWatch Logs에서 확인합니다</li>
+              <li>EC2 인스턴스의 보안그룹이 격리용 SG로 변경되었는지 확인합니다</li>
+              <li>SNS 알림 이메일이 수신되었는지 확인합니다</li>
+            </ul>
+            <div class="info-box tip">
+              <div class="info-box-title">샘플 Finding 주의사항</div>
+              <p>
+                GuardDuty 샘플 Finding은 실제 리소스 ID를 포함하지 않을 수 있습니다.
+                완전한 테스트를 위해서는 Lambda 함수에 테스트 이벤트를 직접 구성하여
+                실제 인스턴스 ID를 포함한 이벤트로 테스트하는 것이 좋습니다.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 섹션 8: 사고 대응 런북 -->
+    <section class="content-section" id="runbook-guide">
+      <h2>8. 사고 대응 런북(Runbook) 작성 가이드</h2>
+
+      <p>
+        런북(Runbook)은 특정 사고 유형에 대한 <strong>단계별 대응 절차를 문서화</strong>한 것입니다.
+        사고 발생 시 당황하지 않고 체계적으로 대응할 수 있도록 사전에 준비해두어야 합니다.
+      </p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 비행기 비상 체크리스트</div>
+        <p>
+          파일럿은 엔진 고장, 유압 실패 등 각 비상 상황에 대한 체크리스트를 갖고 있습니다.
+          긴급 상황에서 기억에 의존하지 않고 체크리스트를 따라 정확하게 대응합니다.
+          보안 사고 런북도 동일한 역할을 합니다.
+        </p>
+      </div>
+
+      <h3>런북 템플릿 구조</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>항목</th>
+            <th>설명</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>사고 유형</strong></td>
+            <td>EC2 인스턴스 침해, IAM 키 유출, S3 데이터 노출 등</td>
+          </tr>
+          <tr>
+            <td><strong>심각도 기준</strong></td>
+            <td>어떤 조건에서 해당 런북을 실행하는지</td>
+          </tr>
+          <tr>
+            <td><strong>초기 대응 (5분 이내)</strong></td>
+            <td>즉시 수행해야 할 격리/차단 조치</td>
+          </tr>
+          <tr>
+            <td><strong>분석 절차 (30분 이내)</strong></td>
+            <td>원인 파악을 위한 로그 분석 방법</td>
+          </tr>
+          <tr>
+            <td><strong>복구 절차</strong></td>
+            <td>시스템을 정상 상태로 복구하는 단계</td>
+          </tr>
+          <tr>
+            <td><strong>에스컬레이션</strong></td>
+            <td>상위 보고 기준 및 연락 체계</td>
+          </tr>
+          <tr>
+            <td><strong>사후 조치</strong></td>
+            <td>재발 방지를 위한 조치 사항</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>런북 예시: EC2 인스턴스 침해 대응</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">yaml</span><button class="copy-btn">복사</button></div>
+        <pre><code># EC2 인스턴스 침해 대응 런북
+runbook:
+  name: "EC2 인스턴스 침해 대응"
+  version: "1.0"
+  last_updated: "2024-12-01"
+
+  trigger:
+    - GuardDuty Finding: "UnauthorizedAccess:EC2/*"
+    - GuardDuty Finding: "CryptoCurrency:EC2/*"
+    - GuardDuty Finding: "Trojan:EC2/*"
+    - 심각도: High 이상
+
+  phase_1_contain:  # 초기 대응 (5분 이내)
+    - action: "보안그룹을 격리용 SG로 교체"
+      automated: true
+      service: "Lambda (auto-isolate-ec2)"
+    - action: "인스턴스 메타데이터에 사고 태그 추가"
+      automated: true
+    - action: "보안팀 및 인프라팀에 알림"
+      automated: true
+      service: "SNS"
+
+  phase_2_analyze:  # 분석 (30분 이내)
+    - action: "CloudTrail에서 해당 인스턴스 관련 이벤트 조회"
+      query: |
+        SELECT * FROM cloudtrail_logs
+        WHERE sourceipaddress = '인스턴스 IP'
+        AND eventtime > '사고 발생 1시간 전'
+    - action: "VPC Flow Logs에서 비정상 트래픽 확인"
+    - action: "인스턴스에 연결된 IAM 역할의 활동 확인"
+    - action: "EBS 스냅샷 생성 (포렌식용)"
+
+  phase_3_recover:  # 복구
+    - action: "감염된 인스턴스 종료 (EBS 보존)"
+    - action: "깨끗한 AMI에서 새 인스턴스 시작"
+    - action: "보안 패치 적용 확인"
+    - action: "원래 보안그룹 복원"
+    - action: "서비스 정상 동작 확인"
+
+  phase_4_lessons:  # 교훈
+    - action: "사고 보고서 작성"
+    - action: "타임라인 정리"
+    - action: "근본 원인 분석 (RCA)"
+    - action: "재발 방지 대책 수립"
+    - action: "런북 업데이트"</code></pre>
+      </div>
+
+      <h3>AWS Systems Manager Automation을 활용한 런북 자동화</h3>
+      <p>
+        런북을 SSM Automation 문서로 작성하면, 사고 발생 시 자동으로 또는
+        한 번의 클릭으로 전체 대응 절차를 실행할 수 있습니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">yaml</span><button class="copy-btn">복사</button></div>
+        <pre><code># SSM Automation 문서 예시
+description: "EC2 인스턴스 격리 자동화"
+schemaVersion: "0.3"
+assumeRole: "{{ AutomationAssumeRole }}"
+parameters:
+  InstanceId:
+    type: String
+    description: "격리할 EC2 인스턴스 ID"
+  IsolationSgId:
+    type: String
+    description: "격리용 보안그룹 ID"
+
+mainSteps:
+  - name: CreateEbsSnapshot
+    action: "aws:executeAwsApi"
+    inputs:
+      Service: ec2
+      Api: CreateSnapshot
+      VolumeId: "{{ InstanceId }}"
+      Description: "포렌식용 스냅샷"
+
+  - name: IsolateInstance
+    action: "aws:executeAwsApi"
+    inputs:
+      Service: ec2
+      Api: ModifyInstanceAttribute
+      InstanceId: "{{ InstanceId }}"
+      Groups:
+        - "{{ IsolationSgId }}"
+
+  - name: NotifyTeam
+    action: "aws:executeAwsApi"
+    inputs:
+      Service: sns
+      Api: Publish
+      TopicArn: "arn:aws:sns:ap-northeast-2:ACCOUNT:security-alerts"
+      Subject: "EC2 인스턴스 격리 완료"
+      Message: "인스턴스 {{ InstanceId }}가 격리되었습니다."</code></pre>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">런북 관리 모범 사례</div>
+        <p>
+          1) <strong>정기적 업데이트:</strong> 최소 분기 1회 런북을 리뷰하고 업데이트하세요.<br>
+          2) <strong>모의 훈련(Game Day):</strong> 정기적으로 런북을 사용한 모의 훈련을 실시하세요.<br>
+          3) <strong>버전 관리:</strong> 런북을 Git으로 관리하여 변경 이력을 추적하세요.<br>
+          4) <strong>자동화 확대:</strong> 수동 단계를 점진적으로 자동화로 전환하세요.<br>
+          5) <strong>접근성:</strong> 모든 보안 담당자가 런북에 즉시 접근할 수 있도록 하세요.
+        </p>
+      </div>
+
+      <div class="info-box concept">
+        <div class="info-box-title">ShopEasy에 적용할 사고 대응 전략</div>
+        <p>
+          ShopEasy 이커머스 서비스에서는 다음 사고 시나리오에 대한 런북을 우선 작성해야 합니다:<br>
+          - <strong>EC2 웹서버 침해:</strong> 자동 격리 + ALB에서 제거 + 새 인스턴스 배포<br>
+          - <strong>DB 접근 키 유출:</strong> Secrets Manager 즉시 로테이션 + 접근 로그 감사<br>
+          - <strong>S3 버킷 공개 노출:</strong> 즉시 퍼블릭 액세스 차단 + 접근 로그 분석<br>
+          - <strong>DDoS 공격:</strong> WAF 규칙 강화 + Shield Advanced 대응
+        </p>
+      </div>
+    </section>
+
+    <div class="chapter-nav">
+      <a href="19-guardduty-securityhub.html" class="prev">이전: GuardDuty & Security Hub</a>
+      <a href="21-organizations-scp.html" class="next">다음: AWS Organizations & SCP</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/20-incident-response.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>

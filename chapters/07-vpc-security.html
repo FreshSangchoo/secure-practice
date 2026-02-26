@@ -1,0 +1,1328 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/07-vpc-security.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VPC 보안 심화 - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li><a href="#sg-chaining">보안그룹 체이닝</a></li>
+      <li><a href="#nacl">NACL 활용</a></li>
+      <li><a href="#flow-logs">VPC Flow Logs</a></li>
+      <li><a href="#private-subnet">프라이빗 서브넷 격리</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 07</span>
+      <h1>VPC 보안 심화</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>보안그룹 체이닝 전략을 설계하고 적용할 수 있다</li>
+          <li>NACL과 보안그룹의 차이를 이해하고 적절히 활용할 수 있다</li>
+          <li>VPC Flow Logs를 활성화하고 트래픽을 분석할 수 있다</li>
+          <li>프라이빗 서브넷 격리 패턴과 VPC Endpoint를 구성할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ==================== Section 1: SG Chaining ==================== -->
+    <section class="content-section" id="sg-chaining">
+      <h2>보안그룹 체이닝 전략</h2>
+
+      <h3>계층별 보안그룹: ALB, EC2, RDS</h3>
+      <p>
+        보안그룹 체이닝(Security Group Chaining)은 각 아키텍처 계층에 독립적인 보안그룹을 할당하고,
+        <strong>이전 계층의 보안그룹 ID를 참조</strong>하여 트래픽을 허용하는 패턴입니다.
+        IP 주소 대신 보안그룹을 참조하면 인스턴스가 변경되어도 규칙을 수정할 필요가 없습니다.
+      </p>
+
+      <div class="info-box concept">
+        <div class="info-box-title">보안그룹 체이닝의 핵심 원리</div>
+        <p>
+          전통적인 방화벽 규칙은 IP 주소를 기반으로 작동합니다.
+          하지만 클라우드 환경에서는 인스턴스의 IP가 자주 변경되므로 IP 기반 규칙은 관리가 어렵습니다.
+          AWS 보안그룹은 <strong>다른 보안그룹의 ID를 소스로 참조</strong>할 수 있어,
+          "이 보안그룹에 속한 모든 리소스의 트래픽을 허용"하는 동적 규칙을 만들 수 있습니다.
+        </p>
+      </div>
+
+      <h3>보안그룹 참조(SG Referencing) 패턴</h3>
+      <p>
+        ShopEasy 이커머스 앱의 아키텍처를 기준으로 보안그룹 체이닝을 설계합니다.
+        트래픽 흐름은 다음과 같습니다:
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">ShopEasy 보안그룹 체이닝 아키텍처</div>
+        <div class="diagram-group cloud">
+          <div class="diagram-row">
+            <div class="diagram-box user">
+              <strong>인터넷 사용자</strong><br>
+              0.0.0.0/0
+            </div>
+          </div>
+          <div class="diagram-group region">
+            <div class="diagram-group vpc">
+              <div class="diagram-group subnet-pub">
+                <div class="diagram-row">
+                  <div class="diagram-box network">
+                    <strong>SG: shopeasy-alb-sg</strong><br>
+                    Inbound: 80, 443 from 0.0.0.0/0<br>
+                    <em>Application Load Balancer</em>
+                  </div>
+                </div>
+              </div>
+              <div class="diagram-group subnet-priv">
+                <div class="diagram-row">
+                  <div class="diagram-box compute">
+                    <strong>SG: shopeasy-ec2-sg</strong><br>
+                    Inbound: 3000 from <em>shopeasy-alb-sg</em><br>
+                    <em>EC2 (API Server)</em>
+                  </div>
+                </div>
+                <div class="diagram-row">
+                  <div class="diagram-box database">
+                    <strong>SG: shopeasy-rds-sg</strong><br>
+                    Inbound: 3306 from <em>shopeasy-ec2-sg</em><br>
+                    <em>RDS (MySQL)</em>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3>최소 포트만 열기</h3>
+      <p>
+        각 보안그룹에서는 해당 계층에서 실제로 사용하는 포트만 열어야 합니다.
+        아래 표는 ShopEasy 앱의 보안그룹별 권장 규칙입니다.
+      </p>
+
+      <h4>ALB 보안그룹 (shopeasy-alb-sg)</h4>
+      <table>
+        <thead>
+          <tr>
+            <th>유형</th>
+            <th>방향</th>
+            <th>프로토콜</th>
+            <th>포트</th>
+            <th>소스/대상</th>
+            <th>설명</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>인바운드</td>
+            <td>Inbound</td>
+            <td>TCP</td>
+            <td>443</td>
+            <td>0.0.0.0/0</td>
+            <td>HTTPS 트래픽 수신</td>
+          </tr>
+          <tr>
+            <td>인바운드</td>
+            <td>Inbound</td>
+            <td>TCP</td>
+            <td>80</td>
+            <td>0.0.0.0/0</td>
+            <td>HTTP (HTTPS 리다이렉트용)</td>
+          </tr>
+          <tr>
+            <td>아웃바운드</td>
+            <td>Outbound</td>
+            <td>TCP</td>
+            <td>3000</td>
+            <td>shopeasy-ec2-sg</td>
+            <td>EC2 API 서버로 전달</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h4>EC2 보안그룹 (shopeasy-ec2-sg)</h4>
+      <table>
+        <thead>
+          <tr>
+            <th>유형</th>
+            <th>방향</th>
+            <th>프로토콜</th>
+            <th>포트</th>
+            <th>소스/대상</th>
+            <th>설명</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>인바운드</td>
+            <td>Inbound</td>
+            <td>TCP</td>
+            <td>3000</td>
+            <td>shopeasy-alb-sg</td>
+            <td>ALB에서 오는 트래픽만 허용</td>
+          </tr>
+          <tr>
+            <td>인바운드</td>
+            <td>Inbound</td>
+            <td>TCP</td>
+            <td>22</td>
+            <td>10.0.0.0/24 (Bastion)</td>
+            <td>SSH 접속 (Bastion Host에서만)</td>
+          </tr>
+          <tr>
+            <td>아웃바운드</td>
+            <td>Outbound</td>
+            <td>TCP</td>
+            <td>3306</td>
+            <td>shopeasy-rds-sg</td>
+            <td>RDS MySQL 접속</td>
+          </tr>
+          <tr>
+            <td>아웃바운드</td>
+            <td>Outbound</td>
+            <td>TCP</td>
+            <td>443</td>
+            <td>0.0.0.0/0</td>
+            <td>AWS 서비스 API 호출 (S3, SQS 등)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h4>RDS 보안그룹 (shopeasy-rds-sg)</h4>
+      <table>
+        <thead>
+          <tr>
+            <th>유형</th>
+            <th>방향</th>
+            <th>프로토콜</th>
+            <th>포트</th>
+            <th>소스/대상</th>
+            <th>설명</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>인바운드</td>
+            <td>Inbound</td>
+            <td>TCP</td>
+            <td>3306</td>
+            <td>shopeasy-ec2-sg</td>
+            <td>EC2 API 서버에서만 접근 허용</td>
+          </tr>
+          <tr>
+            <td>아웃바운드</td>
+            <td>Outbound</td>
+            <td>없음</td>
+            <td>-</td>
+            <td>-</td>
+            <td>아웃바운드 불필요 (응답은 자동 허용)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box tip">
+        <div class="info-box-title">보안그룹의 스테이트풀 특성</div>
+        <p>
+          보안그룹은 <strong>스테이트풀(Stateful)</strong>입니다.
+          인바운드 규칙으로 허용된 트래픽의 응답은 아웃바운드 규칙에 관계없이 자동으로 허용됩니다.
+          따라서 RDS 보안그룹의 아웃바운드에 별도 규칙을 추가할 필요가 없습니다.
+          EC2에서 3306 포트로 들어온 요청에 대한 응답은 자동으로 EC2로 돌아갑니다.
+        </p>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 보안그룹 생성
+VPC_ID="vpc-0abc123def456"
+
+# ALB 보안그룹
+ALB_SG=$(aws ec2 create-security-group \
+  --group-name shopeasy-alb-sg \
+  --description "ShopEasy ALB Security Group" \
+  --vpc-id $VPC_ID \
+  --query 'GroupId' --output text)
+
+# EC2 보안그룹
+EC2_SG=$(aws ec2 create-security-group \
+  --group-name shopeasy-ec2-sg \
+  --description "ShopEasy EC2 API Server Security Group" \
+  --vpc-id $VPC_ID \
+  --query 'GroupId' --output text)
+
+# RDS 보안그룹
+RDS_SG=$(aws ec2 create-security-group \
+  --group-name shopeasy-rds-sg \
+  --description "ShopEasy RDS MySQL Security Group" \
+  --vpc-id $VPC_ID \
+  --query 'GroupId' --output text)
+
+echo "ALB SG: $ALB_SG"
+echo "EC2 SG: $EC2_SG"
+echo "RDS SG: $RDS_SG"
+
+# ALB 보안그룹 규칙 (인터넷 → ALB)
+aws ec2 authorize-security-group-ingress \
+  --group-id $ALB_SG \
+  --protocol tcp --port 443 --cidr 0.0.0.0/0
+aws ec2 authorize-security-group-ingress \
+  --group-id $ALB_SG \
+  --protocol tcp --port 80 --cidr 0.0.0.0/0
+
+# EC2 보안그룹 규칙 (ALB → EC2, SG 참조!)
+aws ec2 authorize-security-group-ingress \
+  --group-id $EC2_SG \
+  --protocol tcp --port 3000 \
+  --source-group $ALB_SG
+
+# RDS 보안그룹 규칙 (EC2 → RDS, SG 참조!)
+aws ec2 authorize-security-group-ingress \
+  --group-id $RDS_SG \
+  --protocol tcp --port 3306 \
+  --source-group $EC2_SG
+
+echo "보안그룹 체이닝 설정 완료!"</code></pre>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">보안그룹 설계 시 흔한 실수</div>
+        <p>
+          <strong>실수 1:</strong> RDS 보안그룹에 <code>0.0.0.0/0</code>을 허용하여 인터넷에서 직접 DB에 접근 가능하게 만듦<br>
+          <strong>실수 2:</strong> EC2 보안그룹에 SSH(22) 포트를 <code>0.0.0.0/0</code>으로 열어둠<br>
+          <strong>실수 3:</strong> 아웃바운드 규칙을 <code>0.0.0.0/0</code> 전체 포트로 열어두어 데이터 유출 경로 생성<br>
+          <strong>실수 4:</strong> 보안그룹 참조 대신 IP 하드코딩으로 Auto Scaling 시 규칙이 깨짐
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== Section 2: NACL ==================== -->
+    <section class="content-section" id="nacl">
+      <h2>NACL 활용</h2>
+
+      <h3>NACL vs 보안그룹 비교</h3>
+      <p>
+        Network ACL(NACL)은 <strong>서브넷 레벨</strong>에서 동작하는 방화벽이고,
+        보안그룹은 <strong>인스턴스 레벨</strong>에서 동작하는 방화벽입니다.
+        두 가지를 함께 사용하면 <strong>심층 방어(Defense in Depth)</strong>를 구현할 수 있습니다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>항목</th>
+            <th>보안그룹 (Security Group)</th>
+            <th>NACL (Network ACL)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>적용 레벨</strong></td>
+            <td>인스턴스 (ENI)</td>
+            <td>서브넷</td>
+          </tr>
+          <tr>
+            <td><strong>상태 추적</strong></td>
+            <td>스테이트풀 (Stateful)</td>
+            <td>스테이트리스 (Stateless)</td>
+          </tr>
+          <tr>
+            <td><strong>규칙 유형</strong></td>
+            <td>허용(Allow)만 가능</td>
+            <td>허용(Allow) + 거부(Deny) 가능</td>
+          </tr>
+          <tr>
+            <td><strong>규칙 평가</strong></td>
+            <td>모든 규칙 평가 후 결정</td>
+            <td>규칙 번호 순서대로 평가</td>
+          </tr>
+          <tr>
+            <td><strong>기본 동작</strong></td>
+            <td>모든 트래픽 거부 (인바운드)</td>
+            <td>모든 트래픽 허용 (기본 NACL)</td>
+          </tr>
+          <tr>
+            <td><strong>반환 트래픽</strong></td>
+            <td>자동 허용</td>
+            <td>명시적으로 허용 필요</td>
+          </tr>
+          <tr>
+            <td><strong>적용 방법</strong></td>
+            <td>인스턴스에 직접 연결</td>
+            <td>서브넷에 자동 적용</td>
+          </tr>
+          <tr>
+            <td><strong>주요 용도</strong></td>
+            <td>인스턴스별 접근 제어</td>
+            <td>서브넷 전체 차단/허용</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>서브넷 레벨 차단의 용도</h3>
+      <p>
+        NACL은 주로 다음과 같은 상황에서 유용합니다:
+      </p>
+
+      <div class="info-box tip">
+        <div class="info-box-title">NACL 활용 시나리오</div>
+        <p>
+          <strong>1. 블랙리스트:</strong> 알려진 악성 IP 대역을 서브넷 레벨에서 차단합니다.<br>
+          <strong>2. 서브넷 격리:</strong> 특정 서브넷 간의 통신을 완전히 차단합니다.<br>
+          <strong>3. 규정 준수:</strong> 보안그룹보다 한 단계 높은 수준의 네트워크 보안을 요구하는 규정 준수에 활용합니다.<br>
+          <strong>4. 긴급 차단:</strong> 보안 사고 발생 시 특정 IP/대역을 즉시 차단합니다.
+        </p>
+      </div>
+
+      <h3>블랙리스트 패턴 (특정 IP 대역 차단)</h3>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># 커스텀 NACL 생성
+NACL_ID=$(aws ec2 create-network-acl \
+  --vpc-id $VPC_ID \
+  --query 'NetworkAcl.NetworkAclId' --output text)
+
+# 악성 IP 차단 (Deny 규칙을 낮은 번호로 먼저 설정)
+# 규칙 번호가 낮을수록 먼저 평가됨
+
+# 규칙 10: 알려진 악성 IP 대역 차단
+aws ec2 create-network-acl-entry \
+  --network-acl-id $NACL_ID \
+  --rule-number 10 \
+  --protocol -1 \
+  --rule-action deny \
+  --ingress \
+  --cidr-block 203.0.113.0/24
+
+# 규칙 20: 또 다른 악성 IP 차단
+aws ec2 create-network-acl-entry \
+  --network-acl-id $NACL_ID \
+  --rule-number 20 \
+  --protocol -1 \
+  --rule-action deny \
+  --ingress \
+  --cidr-block 198.51.100.0/24
+
+# 규칙 100: HTTP 허용
+aws ec2 create-network-acl-entry \
+  --network-acl-id $NACL_ID \
+  --rule-number 100 \
+  --protocol tcp \
+  --port-range From=80,To=80 \
+  --rule-action allow \
+  --ingress \
+  --cidr-block 0.0.0.0/0
+
+# 규칙 110: HTTPS 허용
+aws ec2 create-network-acl-entry \
+  --network-acl-id $NACL_ID \
+  --rule-number 110 \
+  --protocol tcp \
+  --port-range From=443,To=443 \
+  --rule-action allow \
+  --ingress \
+  --cidr-block 0.0.0.0/0
+
+# 규칙 200: 임시 포트 (Ephemeral Ports) 허용 - 아웃바운드 응답용
+aws ec2 create-network-acl-entry \
+  --network-acl-id $NACL_ID \
+  --rule-number 200 \
+  --protocol tcp \
+  --port-range From=1024,To=65535 \
+  --rule-action allow \
+  --ingress \
+  --cidr-block 0.0.0.0/0
+
+# 아웃바운드 규칙 (NACL은 스테이트리스이므로 아웃바운드도 명시 필요!)
+# 규칙 100: 아웃바운드 HTTP 허용
+aws ec2 create-network-acl-entry \
+  --network-acl-id $NACL_ID \
+  --rule-number 100 \
+  --protocol tcp \
+  --port-range From=80,To=80 \
+  --rule-action allow \
+  --egress \
+  --cidr-block 0.0.0.0/0
+
+# 규칙 110: 아웃바운드 HTTPS 허용
+aws ec2 create-network-acl-entry \
+  --network-acl-id $NACL_ID \
+  --rule-number 110 \
+  --protocol tcp \
+  --port-range From=443,To=443 \
+  --rule-action allow \
+  --egress \
+  --cidr-block 0.0.0.0/0
+
+# 규칙 200: 아웃바운드 임시 포트 허용
+aws ec2 create-network-acl-entry \
+  --network-acl-id $NACL_ID \
+  --rule-number 200 \
+  --protocol tcp \
+  --port-range From=1024,To=65535 \
+  --rule-action allow \
+  --egress \
+  --cidr-block 0.0.0.0/0</code></pre>
+      </div>
+
+      <h3>규칙 번호와 평가 순서</h3>
+      <div class="info-box concept">
+        <div class="info-box-title">NACL 규칙 평가 순서</div>
+        <p>
+          NACL은 규칙 번호가 <strong>낮은 것부터 순서대로</strong> 평가합니다.
+          첫 번째로 매칭되는 규칙이 적용되며, 이후 규칙은 무시됩니다.<br><br>
+          <strong>권장 규칙 번호 체계:</strong><br>
+          - 1~50: 긴급 차단 규칙 (Deny)<br>
+          - 100~199: 일반 인바운드/아웃바운드 허용 (Allow)<br>
+          - 200~299: 임시 포트 허용<br>
+          - 32767(*): 기본 규칙 (Deny All) - 자동 생성<br><br>
+          <strong>중요:</strong> 규칙 사이에 간격을 두면 나중에 새 규칙을 삽입하기 쉽습니다.
+        </p>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>규칙 번호</th>
+            <th>유형</th>
+            <th>프로토콜</th>
+            <th>포트</th>
+            <th>소스</th>
+            <th>액션</th>
+            <th>평가 순서</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>10</td>
+            <td>인바운드</td>
+            <td>ALL</td>
+            <td>ALL</td>
+            <td>203.0.113.0/24</td>
+            <td><strong>DENY</strong></td>
+            <td>1번째</td>
+          </tr>
+          <tr>
+            <td>20</td>
+            <td>인바운드</td>
+            <td>ALL</td>
+            <td>ALL</td>
+            <td>198.51.100.0/24</td>
+            <td><strong>DENY</strong></td>
+            <td>2번째</td>
+          </tr>
+          <tr>
+            <td>100</td>
+            <td>인바운드</td>
+            <td>TCP</td>
+            <td>443</td>
+            <td>0.0.0.0/0</td>
+            <td>ALLOW</td>
+            <td>3번째</td>
+          </tr>
+          <tr>
+            <td>200</td>
+            <td>인바운드</td>
+            <td>TCP</td>
+            <td>1024-65535</td>
+            <td>0.0.0.0/0</td>
+            <td>ALLOW</td>
+            <td>4번째</td>
+          </tr>
+          <tr>
+            <td>*</td>
+            <td>인바운드</td>
+            <td>ALL</td>
+            <td>ALL</td>
+            <td>0.0.0.0/0</td>
+            <td><strong>DENY</strong></td>
+            <td>마지막 (기본)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Lab: NACL -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: NACL로 특정 IP 차단</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">Step 1: 현재 NACL 확인</div>
+            <p>서브넷에 연결된 기본 NACL의 규칙을 확인합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># VPC의 모든 NACL 조회
+aws ec2 describe-network-acls \
+  --filters "Name=vpc-id,Values=$VPC_ID" \
+  --query 'NetworkAcls[].{ID:NetworkAclId,Default:IsDefault,Rules:Entries[].{RuleNum:RuleNumber,Action:RuleAction,CIDR:CidrBlock,Protocol:Protocol,Egress:Egress}}' \
+  --output json</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 2: 커스텀 NACL 생성 및 차단 규칙 추가</div>
+            <p>새로운 NACL을 만들고 특정 IP를 차단하는 규칙을 추가합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 커스텀 NACL 생성
+CUSTOM_NACL=$(aws ec2 create-network-acl \
+  --vpc-id $VPC_ID \
+  --tag-specifications 'ResourceType=network-acl,Tags=[{Key=Name,Value=shopeasy-public-nacl}]' \
+  --query 'NetworkAcl.NetworkAclId' --output text)
+
+# 차단할 IP 대역 추가 (예: 의심스러운 트래픽 발생 IP)
+aws ec2 create-network-acl-entry \
+  --network-acl-id $CUSTOM_NACL \
+  --rule-number 10 --protocol -1 \
+  --rule-action deny --ingress \
+  --cidr-block 192.0.2.0/24
+
+# 나머지 일반 트래픽 허용 규칙 추가
+aws ec2 create-network-acl-entry \
+  --network-acl-id $CUSTOM_NACL \
+  --rule-number 100 --protocol tcp \
+  --port-range From=443,To=443 \
+  --rule-action allow --ingress \
+  --cidr-block 0.0.0.0/0
+
+aws ec2 create-network-acl-entry \
+  --network-acl-id $CUSTOM_NACL \
+  --rule-number 100 --protocol tcp \
+  --port-range From=443,To=443 \
+  --rule-action allow --egress \
+  --cidr-block 0.0.0.0/0
+
+aws ec2 create-network-acl-entry \
+  --network-acl-id $CUSTOM_NACL \
+  --rule-number 200 --protocol tcp \
+  --port-range From=1024,To=65535 \
+  --rule-action allow --ingress \
+  --cidr-block 0.0.0.0/0
+
+aws ec2 create-network-acl-entry \
+  --network-acl-id $CUSTOM_NACL \
+  --rule-number 200 --protocol tcp \
+  --port-range From=1024,To=65535 \
+  --rule-action allow --egress \
+  --cidr-block 0.0.0.0/0</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 3: 서브넷에 NACL 연결</div>
+            <p>퍼블릭 서브넷에 새로 생성한 NACL을 연결합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 기존 서브넷-NACL 연결 ID 확인
+ASSOC_ID=$(aws ec2 describe-network-acls \
+  --filters "Name=association.subnet-id,Values=subnet-0abc123" \
+  --query 'NetworkAcls[0].Associations[?SubnetId==`subnet-0abc123`].NetworkAclAssociationId' \
+  --output text)
+
+# 새로운 NACL로 교체
+aws ec2 replace-network-acl-association \
+  --association-id $ASSOC_ID \
+  --network-acl-id $CUSTOM_NACL</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 4: 차단 테스트 및 확인</div>
+            <p>차단된 IP에서의 접근이 실제로 거부되는지 확인합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># NACL 규칙 확인
+aws ec2 describe-network-acls \
+  --network-acl-ids $CUSTOM_NACL \
+  --query 'NetworkAcls[0].Entries[?Egress==`false`].{RuleNum:RuleNumber,Action:RuleAction,CIDR:CidrBlock}' \
+  --output table
+
+# VPC Flow Logs에서 차단된 트래픽 확인 (Flow Logs 활성화 필요)
+# REJECT 액션이 있는 로그 항목이 표시됩니다</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">NACL 사용 시 주의사항</div>
+        <p>
+          <strong>1. 스테이트리스:</strong> NACL은 스테이트리스이므로 인바운드/아웃바운드 규칙을 모두 설정해야 합니다. 특히 임시 포트(1024-65535)를 열어야 응답 트래픽이 돌아옵니다.<br>
+          <strong>2. 서브넷 전체 영향:</strong> NACL 규칙은 서브넷의 모든 리소스에 적용됩니다. 특정 인스턴스만 차단하려면 보안그룹을 사용하세요.<br>
+          <strong>3. 규칙 수 제한:</strong> NACL당 인바운드/아웃바운드 각각 20개 규칙이 기본 한도입니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== Section 3: VPC Flow Logs ==================== -->
+    <section class="content-section" id="flow-logs">
+      <h2>VPC Flow Logs</h2>
+
+      <h3>Flow Log 개념과 형식</h3>
+      <p>
+        VPC Flow Logs는 VPC 내의 네트워크 인터페이스(ENI)를 통과하는 <strong>IP 트래픽 정보</strong>를 캡처합니다.
+        보안 분석, 네트워크 문제 해결, 규정 준수 감사에 필수적인 기능입니다.
+        Flow Log는 VPC, 서브넷, 또는 개별 ENI 레벨에서 활성화할 수 있습니다.
+      </p>
+
+      <div class="info-box concept">
+        <div class="info-box-title">VPC Flow Logs가 기록하는 정보</div>
+        <p>
+          Flow Log는 각 네트워크 흐름(flow)에 대해 소스/대상 IP, 포트, 프로토콜, 패킷 수, 바이트 수,
+          허용/거부 여부 등을 기록합니다. 단, <strong>패킷 내용(payload)은 기록하지 않습니다</strong>.
+          순수한 네트워크 메타데이터만 수집합니다.
+        </p>
+      </div>
+
+      <h3>저장 대상: CloudWatch Logs vs S3</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>저장 대상</th>
+            <th>장점</th>
+            <th>단점</th>
+            <th>추천 사용 사례</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>CloudWatch Logs</strong></td>
+            <td>실시간 모니터링, 알람 설정, Insights 쿼리</td>
+            <td>비용이 높음, 대용량 보관에 부적합</td>
+            <td>실시간 보안 모니터링, 소규모 환경</td>
+          </tr>
+          <tr>
+            <td><strong>S3</strong></td>
+            <td>저비용 장기 보관, Athena로 대량 분석</td>
+            <td>실시간 분석 어려움</td>
+            <td>장기 보관, 대규모 환경, 감사 목적</td>
+          </tr>
+          <tr>
+            <td><strong>Kinesis Data Firehose</strong></td>
+            <td>실시간 스트리밍, 다양한 대상으로 전송</td>
+            <td>설정 복잡, 추가 비용</td>
+            <td>SIEM 연동, 실시간 대시보드</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>주요 필드 설명</h3>
+      <p>기본 Flow Log 형식은 다음 필드를 포함합니다:</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">text</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># Flow Log 기본 형식
+version account-id interface-id srcaddr dstaddr srcport dstport protocol packets bytes start end action log-status
+
+# 예시 로그
+2 123456789012 eni-0abc123 10.0.1.50 10.0.2.100 49152 3306 6 25 5000 1708300000 1708300060 ACCEPT OK
+2 123456789012 eni-0abc123 203.0.113.50 10.0.1.10 12345 443 6 15 3000 1708300000 1708300060 ACCEPT OK
+2 123456789012 eni-0abc123 198.51.100.10 10.0.1.10 54321 22 6 5 300 1708300000 1708300060 REJECT OK</code></pre>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>필드</th>
+            <th>설명</th>
+            <th>예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>version</strong></td>
+            <td>Flow Log 버전</td>
+            <td>2</td>
+          </tr>
+          <tr>
+            <td><strong>account-id</strong></td>
+            <td>AWS 계정 ID</td>
+            <td>123456789012</td>
+          </tr>
+          <tr>
+            <td><strong>interface-id</strong></td>
+            <td>네트워크 인터페이스 ID</td>
+            <td>eni-0abc123def</td>
+          </tr>
+          <tr>
+            <td><strong>srcaddr</strong></td>
+            <td>소스(출발) IP 주소</td>
+            <td>10.0.1.50</td>
+          </tr>
+          <tr>
+            <td><strong>dstaddr</strong></td>
+            <td>대상(도착) IP 주소</td>
+            <td>10.0.2.100</td>
+          </tr>
+          <tr>
+            <td><strong>srcport</strong></td>
+            <td>소스 포트</td>
+            <td>49152</td>
+          </tr>
+          <tr>
+            <td><strong>dstport</strong></td>
+            <td>대상 포트</td>
+            <td>3306</td>
+          </tr>
+          <tr>
+            <td><strong>protocol</strong></td>
+            <td>IANA 프로토콜 번호 (6=TCP, 17=UDP, 1=ICMP)</td>
+            <td>6</td>
+          </tr>
+          <tr>
+            <td><strong>packets</strong></td>
+            <td>전송된 패킷 수</td>
+            <td>25</td>
+          </tr>
+          <tr>
+            <td><strong>bytes</strong></td>
+            <td>전송된 바이트 수</td>
+            <td>5000</td>
+          </tr>
+          <tr>
+            <td><strong>start</strong></td>
+            <td>캡처 시작 시간 (Unix timestamp)</td>
+            <td>1708300000</td>
+          </tr>
+          <tr>
+            <td><strong>end</strong></td>
+            <td>캡처 종료 시간 (Unix timestamp)</td>
+            <td>1708300060</td>
+          </tr>
+          <tr>
+            <td><strong>action</strong></td>
+            <td>트래픽 허용(ACCEPT) 또는 거부(REJECT)</td>
+            <td>ACCEPT / REJECT</td>
+          </tr>
+          <tr>
+            <td><strong>log-status</strong></td>
+            <td>로깅 상태 (OK, NODATA, SKIPDATA)</td>
+            <td>OK</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Lab: Flow Logs -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: VPC Flow Logs 활성화 및 분석</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">Step 1: IAM 역할 생성 (Flow Logs용)</div>
+            <p>Flow Logs가 CloudWatch Logs에 쓸 수 있도록 IAM 역할을 생성합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 신뢰 정책
+cat &gt; flow-logs-trust-policy.json &lt;&lt; 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "vpc-flow-logs.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+
+# 역할 생성
+aws iam create-role \
+  --role-name ShopEasy-VPC-FlowLogs-Role \
+  --assume-role-policy-document file://flow-logs-trust-policy.json
+
+# 권한 정책
+cat &gt; flow-logs-policy.json &lt;&lt; 'EOF'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+
+aws iam put-role-policy \
+  --role-name ShopEasy-VPC-FlowLogs-Role \
+  --policy-name FlowLogsPolicy \
+  --policy-document file://flow-logs-policy.json</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 2: VPC Flow Logs 활성화</div>
+            <p>VPC 레벨에서 Flow Logs를 활성화합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># CloudWatch Logs 로그 그룹 생성
+aws logs create-log-group \
+  --log-group-name /shopeasy/vpc-flow-logs \
+  --retention-in-days 30
+
+# VPC Flow Logs 활성화 (모든 트래픽 기록)
+aws ec2 create-flow-logs \
+  --resource-type VPC \
+  --resource-ids $VPC_ID \
+  --traffic-type ALL \
+  --log-destination-type cloud-watch-logs \
+  --log-group-name /shopeasy/vpc-flow-logs \
+  --deliver-logs-permission-arn "arn:aws:iam::123456789012:role/ShopEasy-VPC-FlowLogs-Role" \
+  --tag-specifications 'ResourceType=vpc-flow-log,Tags=[{Key=Name,Value=shopeasy-flow-logs}]'
+
+# S3에도 저장 (장기 보관용)
+aws ec2 create-flow-logs \
+  --resource-type VPC \
+  --resource-ids $VPC_ID \
+  --traffic-type ALL \
+  --log-destination-type s3 \
+  --log-destination "arn:aws:s3:::shopeasy-flow-logs-bucket"</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 3: CloudWatch Logs Insights로 분석</div>
+            <p>CloudWatch Logs Insights를 사용하여 Flow Log 데이터를 분석합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">sql</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 거부된 트래픽 Top 10 소스 IP
+fields @timestamp, srcAddr, dstAddr, dstPort, action
+| filter action = "REJECT"
+| stats count(*) as rejectedCount by srcAddr
+| sort rejectedCount desc
+| limit 10
+
+# 특정 포트로의 접근 시도 (SSH 무차별 대입 공격 탐지)
+fields @timestamp, srcAddr, dstAddr, dstPort, action
+| filter dstPort = 22 and action = "REJECT"
+| stats count(*) as attempts by srcAddr
+| sort attempts desc
+| limit 20
+
+# RDS 포트(3306)에 비정상 접근 시도
+fields @timestamp, srcAddr, dstAddr, srcPort, dstPort, action
+| filter dstPort = 3306 and action = "REJECT"
+| sort @timestamp desc
+| limit 50
+
+# 시간대별 거부 트래픽 추이
+fields @timestamp, action
+| filter action = "REJECT"
+| stats count(*) as rejectCount by bin(1h)
+| sort @timestamp desc</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 4: 의심스러운 트래픽 패턴 식별</div>
+            <p>보안 위협을 나타내는 트래픽 패턴을 찾습니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">sql</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 포트 스캐닝 탐지 (하나의 IP에서 다양한 포트로 접근)
+fields srcAddr, dstPort, action
+| filter action = "REJECT"
+| stats count(distinct dstPort) as portCount, count(*) as totalAttempts by srcAddr
+| filter portCount > 10
+| sort portCount desc
+
+# 대량 데이터 전송 탐지 (데이터 유출 의심)
+fields srcAddr, dstAddr, bytes, action
+| filter action = "ACCEPT"
+| stats sum(bytes) as totalBytes by srcAddr, dstAddr
+| filter totalBytes > 1000000000
+| sort totalBytes desc
+
+# 비정상 시간대 접근 (새벽 2~5시)
+fields @timestamp, srcAddr, dstAddr, dstPort, action
+| filter action = "ACCEPT"
+| filter datefloor(@timestamp, 1h) >= "02:00" and datefloor(@timestamp, 1h) <= "05:00"
+| stats count(*) by srcAddr, dstPort
+| sort count(*) desc</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">Flow Logs 운영 모범 사례</div>
+        <p>
+          <strong>1. 보관 기간:</strong> CloudWatch Logs는 30일, S3는 90일 이상 보관을 권장합니다.<br>
+          <strong>2. 비용 관리:</strong> 대량 트래픽 환경에서는 REJECT만 기록하거나, S3 저장을 기본으로 사용하세요.<br>
+          <strong>3. 알람 설정:</strong> 거부 트래픽 급증, 비정상 포트 접근 등에 CloudWatch Alarm을 설정하세요.<br>
+          <strong>4. Athena 연동:</strong> S3에 저장된 Flow Log는 Amazon Athena로 SQL 쿼리 분석이 가능합니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== Section 4: Private Subnet ==================== -->
+    <section class="content-section" id="private-subnet">
+      <h2>프라이빗 서브넷 격리 패턴</h2>
+
+      <h3>퍼블릭/프라이빗 서브넷 분리 전략</h3>
+      <p>
+        VPC 내의 서브넷을 퍼블릭과 프라이빗으로 분리하는 것은 클라우드 보안의 기본입니다.
+        인터넷에서 직접 접근이 필요한 리소스(ALB)만 퍼블릭 서브넷에 배치하고,
+        나머지(EC2, RDS, ElastiCache)는 프라이빗 서브넷에 격리합니다.
+      </p>
+
+      <div class="info-box concept">
+        <div class="info-box-title">퍼블릭 vs 프라이빗 서브넷</div>
+        <p>
+          <strong>퍼블릭 서브넷:</strong> 라우팅 테이블에 인터넷 게이트웨이(IGW)로의 경로가 있는 서브넷입니다. 퍼블릭 IP를 할당받은 리소스가 인터넷과 직접 통신할 수 있습니다.<br><br>
+          <strong>프라이빗 서브넷:</strong> IGW로의 경로가 없는 서브넷입니다. 인터넷에서 직접 접근이 불가능하며, 아웃바운드 인터넷 접근이 필요하면 NAT Gateway를 사용합니다.
+        </p>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">ShopEasy 격리된 네트워크 아키텍처</div>
+        <div class="diagram-group cloud">
+          <div class="diagram-row">
+            <div class="diagram-box user">
+              <strong>인터넷 사용자</strong>
+            </div>
+          </div>
+          <div class="diagram-group region">
+            <div class="diagram-row">
+              <div class="diagram-box cdn">
+                <strong>CloudFront</strong><br>
+                정적 콘텐츠 캐싱
+              </div>
+            </div>
+            <div class="diagram-group vpc">
+              <div class="diagram-group subnet-pub">
+                <div class="diagram-row">
+                  <div class="diagram-box network">
+                    <strong>퍼블릭 서브넷 (AZ-a)</strong><br>
+                    ALB / NAT Gateway / Bastion
+                  </div>
+                  <div class="diagram-box network">
+                    <strong>퍼블릭 서브넷 (AZ-c)</strong><br>
+                    ALB / NAT Gateway
+                  </div>
+                </div>
+              </div>
+              <div class="diagram-group subnet-priv">
+                <div class="diagram-row">
+                  <div class="diagram-box compute">
+                    <strong>프라이빗 서브넷 - 앱 (AZ-a)</strong><br>
+                    EC2 API Server
+                  </div>
+                  <div class="diagram-box compute">
+                    <strong>프라이빗 서브넷 - 앱 (AZ-c)</strong><br>
+                    EC2 API Server
+                  </div>
+                </div>
+                <div class="diagram-row">
+                  <div class="diagram-box database">
+                    <strong>프라이빗 서브넷 - DB (AZ-a)</strong><br>
+                    RDS Primary
+                  </div>
+                  <div class="diagram-box database">
+                    <strong>프라이빗 서브넷 - DB (AZ-c)</strong><br>
+                    RDS Standby
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3>NAT Gateway를 통한 아웃바운드</h3>
+      <p>
+        프라이빗 서브넷의 EC2 인스턴스가 인터넷에 접근해야 할 때(패키지 업데이트, 외부 API 호출 등),
+        NAT Gateway를 통해 아웃바운드 트래픽을 라우팅합니다.
+        NAT Gateway는 퍼블릭 서브넷에 배치하고, 프라이빗 서브넷의 라우팅 테이블에서 참조합니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># Elastic IP 할당 (NAT Gateway용)
+EIP_ALLOC=$(aws ec2 allocate-address \
+  --domain vpc \
+  --query 'AllocationId' --output text)
+
+# NAT Gateway 생성 (퍼블릭 서브넷에 배치)
+NAT_GW=$(aws ec2 create-nat-gateway \
+  --subnet-id subnet-pub-az-a \
+  --allocation-id $EIP_ALLOC \
+  --query 'NatGateway.NatGatewayId' --output text)
+
+# NAT Gateway 생성 완료 대기
+aws ec2 wait nat-gateway-available --nat-gateway-ids $NAT_GW
+
+# 프라이빗 서브넷 라우팅 테이블에 NAT Gateway 경로 추가
+aws ec2 create-route \
+  --route-table-id rtb-private \
+  --destination-cidr-block 0.0.0.0/0 \
+  --nat-gateway-id $NAT_GW</code></pre>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">NAT Gateway 비용 절약 팁</div>
+        <p>
+          NAT Gateway는 시간당 요금 + 데이터 처리 요금이 발생합니다.
+          비용을 줄이려면:<br>
+          <strong>1.</strong> VPC Endpoint를 사용하여 S3, DynamoDB 등 AWS 서비스 트래픽을 NAT Gateway를 거치지 않게 합니다.<br>
+          <strong>2.</strong> 개발/테스트 환경에서는 NAT Instance(t3.micro)를 사용하는 것도 방법입니다.<br>
+          <strong>3.</strong> 고가용성이 필요한 경우 각 AZ에 NAT Gateway를 배치하되, 비용을 고려하세요.
+        </p>
+      </div>
+
+      <h3>VPC Endpoint로 AWS 서비스 접근</h3>
+      <p>
+        VPC Endpoint를 사용하면 프라이빗 서브넷에서 인터넷(NAT Gateway)을 거치지 않고
+        <strong>AWS 프라이빗 네트워크를 통해</strong> AWS 서비스에 직접 접근할 수 있습니다.
+        보안과 비용 모두에서 이점이 있습니다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Endpoint 유형</th>
+            <th>지원 서비스</th>
+            <th>비용</th>
+            <th>동작 방식</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Gateway Endpoint</strong></td>
+            <td>S3, DynamoDB</td>
+            <td>무료</td>
+            <td>라우팅 테이블에 경로 추가</td>
+          </tr>
+          <tr>
+            <td><strong>Interface Endpoint</strong></td>
+            <td>SQS, SNS, KMS, CloudWatch, Secrets Manager 등 대부분의 서비스</td>
+            <td>유료 (시간당 + 데이터)</td>
+            <td>서브넷에 ENI 생성, 프라이빗 DNS 사용</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">bash</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code># Gateway Endpoint: S3 (무료!)
+aws ec2 create-vpc-endpoint \
+  --vpc-id $VPC_ID \
+  --service-name com.amazonaws.ap-northeast-2.s3 \
+  --route-table-ids rtb-private-a rtb-private-c \
+  --tag-specifications 'ResourceType=vpc-endpoint,Tags=[{Key=Name,Value=shopeasy-s3-endpoint}]'
+
+# Gateway Endpoint: DynamoDB (무료!)
+aws ec2 create-vpc-endpoint \
+  --vpc-id $VPC_ID \
+  --service-name com.amazonaws.ap-northeast-2.dynamodb \
+  --route-table-ids rtb-private-a rtb-private-c \
+  --tag-specifications 'ResourceType=vpc-endpoint,Tags=[{Key=Name,Value=shopeasy-dynamodb-endpoint}]'
+
+# Interface Endpoint: SQS (유료)
+aws ec2 create-vpc-endpoint \
+  --vpc-id $VPC_ID \
+  --vpc-endpoint-type Interface \
+  --service-name com.amazonaws.ap-northeast-2.sqs \
+  --subnet-ids subnet-priv-app-a subnet-priv-app-c \
+  --security-group-ids $ENDPOINT_SG \
+  --private-dns-enabled \
+  --tag-specifications 'ResourceType=vpc-endpoint,Tags=[{Key=Name,Value=shopeasy-sqs-endpoint}]'
+
+# Interface Endpoint: CloudWatch Logs (유료)
+aws ec2 create-vpc-endpoint \
+  --vpc-id $VPC_ID \
+  --vpc-endpoint-type Interface \
+  --service-name com.amazonaws.ap-northeast-2.logs \
+  --subnet-ids subnet-priv-app-a subnet-priv-app-c \
+  --security-group-ids $ENDPOINT_SG \
+  --private-dns-enabled
+
+# Endpoint 확인
+aws ec2 describe-vpc-endpoints \
+  --filters "Name=vpc-id,Values=$VPC_ID" \
+  --query 'VpcEndpoints[].{ID:VpcEndpointId,Service:ServiceName,Type:VpcEndpointType,State:State}' \
+  --output table</code></pre>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">VPC Endpoint 보안 정책</div>
+        <p>
+          Gateway Endpoint에는 <strong>엔드포인트 정책</strong>을 적용하여 접근을 제한할 수 있습니다.
+          예를 들어, S3 Gateway Endpoint에 ShopEasy 버킷에만 접근하도록 정책을 설정할 수 있습니다.
+        </p>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowShopEasyBucketsOnly",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::shopeasy-*",
+        "arn:aws:s3:::shopeasy-*/*"
+      ]
+    },
+    {
+      "Sid": "DenyOtherBuckets",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": "*",
+      "Condition": {
+        "StringNotLike": {
+          "s3:ResourceAccount": "123456789012"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">VPC Endpoint 트래픽 흐름</div>
+        <div class="diagram-group vpc">
+          <div class="diagram-group subnet-priv">
+            <div class="diagram-row">
+              <div class="diagram-box compute">
+                <strong>EC2 (프라이빗 서브넷)</strong><br>
+                ShopEasy API Server
+              </div>
+            </div>
+          </div>
+          <div class="diagram-row">
+            <div class="diagram-box security">
+              <strong>Gateway Endpoint</strong><br>
+              S3, DynamoDB<br>
+              (무료, 라우팅 기반)
+            </div>
+            <div class="diagram-box security">
+              <strong>Interface Endpoint</strong><br>
+              SQS, CloudWatch<br>
+              (유료, ENI 기반)
+            </div>
+            <div class="diagram-box network">
+              <strong>NAT Gateway</strong><br>
+              외부 API 호출<br>
+              (유료)
+            </div>
+          </div>
+          <div class="diagram-row">
+            <div class="diagram-box storage">
+              <strong>S3 / DynamoDB</strong><br>
+              AWS 프라이빗 네트워크
+            </div>
+            <div class="diagram-box queue">
+              <strong>SQS / CloudWatch</strong><br>
+              AWS 프라이빗 네트워크
+            </div>
+            <div class="diagram-box user">
+              <strong>인터넷</strong><br>
+              외부 서비스
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box danger">
+        <div class="info-box-title">프라이빗 서브넷 격리 체크리스트</div>
+        <p>
+          &#x2610; 모든 애플리케이션 서버(EC2)가 프라이빗 서브넷에 있는가?<br>
+          &#x2610; 모든 데이터베이스(RDS)가 프라이빗 서브넷에 있는가?<br>
+          &#x2610; ALB만 퍼블릭 서브넷에 배치되어 있는가?<br>
+          &#x2610; S3와 DynamoDB에 Gateway Endpoint가 설정되어 있는가?<br>
+          &#x2610; NAT Gateway가 고가용성으로 구성되어 있는가 (각 AZ)?<br>
+          &#x2610; SSH 접근은 Bastion Host를 통해서만 가능한가?<br>
+          &#x2610; VPC Flow Logs가 활성화되어 있는가?<br>
+          &#x2610; 불필요한 아웃바운드 트래픽이 차단되어 있는가?
+        </p>
+      </div>
+    </section>
+
+    <div class="chapter-nav">
+      <a href="06-ecommerce-iam-lab.html" class="prev">이전: 이커머스 IAM 설계 실습</a>
+      <a href="08-waf.html" class="next">다음: AWS WAF</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/07-vpc-security.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>

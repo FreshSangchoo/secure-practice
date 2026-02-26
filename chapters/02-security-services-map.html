@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/02-security-services-map.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AWS 보안 서비스 전체 맵 & 위협 분석 - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li><a href="#five-categories">보안 서비스 5대 카테고리</a></li>
+      <li><a href="#identity-access">자격증명 & 접근 관리</a></li>
+      <li><a href="#network-security">네트워크 보안 서비스</a></li>
+      <li><a href="#data-protection">데이터 보호 서비스</a></li>
+      <li><a href="#detection-monitoring">탐지 & 모니터링 서비스</a></li>
+      <li><a href="#shopeasy-vulnerabilities">ShopEasy 보안 취약점 분석</a></li>
+      <li><a href="#security-roadmap">보안 적용 로드맵</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 02</span>
+      <h1>AWS 보안 서비스 전체 맵 & 이커머스 보안 위협 분석</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>AWS 보안 서비스를 5대 카테고리로 분류하고 각 서비스의 역할을 설명할 수 있다</li>
+          <li>자격증명, 네트워크, 데이터 보호, 탐지, 사고 대응 서비스의 핵심 기능을 이해한다</li>
+          <li>ShopEasy 이커머스 아키텍처의 현재 보안 취약점을 식별할 수 있다</li>
+          <li>보안 서비스 적용의 우선순위와 로드맵을 수립할 수 있다</li>
+          <li>각 보안 서비스가 이 과정의 어느 챕터에서 다뤄지는지 파악한다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ==================== 섹션 1: 보안 서비스 5대 카테고리 ==================== -->
+    <section class="content-section" id="five-categories">
+      <h2>1. AWS 보안 서비스 5대 카테고리</h2>
+
+      <p>
+        AWS는 200개 이상의 서비스를 제공하며, 그 중 보안 관련 서비스만 30개가 넘습니다.
+        이 서비스들을 효과적으로 이해하려면 <strong>5대 카테고리</strong>로 분류하여 전체 그림을 먼저 파악하는 것이 중요합니다.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">AWS 보안 서비스 5대 카테고리</div>
+        <div class="diagram-row">
+          <div class="diagram-box iam">
+            <div class="box-title">1. 자격증명 & 접근 관리</div>
+            <div class="box-sub">누가 무엇에 접근할 수 있는가?</div>
+          </div>
+          <div class="diagram-box network">
+            <div class="box-title">2. 네트워크 보안</div>
+            <div class="box-sub">트래픽을 어떻게 제어하는가?</div>
+          </div>
+          <div class="diagram-box encryption">
+            <div class="box-title">3. 데이터 보호</div>
+            <div class="box-sub">데이터를 어떻게 보호하는가?</div>
+          </div>
+        </div>
+        <div class="diagram-row" style="margin-top: 1rem;">
+          <div class="diagram-box detective">
+            <div class="box-title">4. 탐지 & 모니터링</div>
+            <div class="box-sub">이상 행위를 어떻게 발견하는가?</div>
+          </div>
+          <div class="diagram-box security">
+            <div class="box-title">5. 사고 대응 & 거버넌스</div>
+            <div class="box-sub">사고를 어떻게 처리하는가?</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box concept">
+        <div class="info-box-title">5대 카테고리는 보안의 라이프사이클</div>
+        <p>
+          이 5가지 카테고리는 보안의 전체 라이프사이클을 나타냅니다:
+          <strong>예방(1,2,3)</strong> &rarr; <strong>탐지(4)</strong> &rarr; <strong>대응(5)</strong>.
+          완전한 보안 체계를 갖추려면 5가지 카테고리 모두를 커버해야 합니다.
+          하나라도 빠지면 보안 사각지대가 생깁니다.
+        </p>
+      </div>
+
+      <h3>전체 서비스 맵 요약</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>카테고리</th>
+            <th>핵심 서비스</th>
+            <th>한 줄 요약</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>자격증명 & 접근</strong></td>
+            <td>IAM, Organizations, IAM Identity Center (SSO), STS</td>
+            <td>누가 무엇을 할 수 있는지 제어</td>
+          </tr>
+          <tr>
+            <td><strong>네트워크 보안</strong></td>
+            <td>VPC, Security Group, NACL, WAF, Shield, Firewall Manager</td>
+            <td>네트워크 트래픽 필터링 및 DDoS 방어</td>
+          </tr>
+          <tr>
+            <td><strong>데이터 보호</strong></td>
+            <td>KMS, CloudHSM, Secrets Manager, ACM, Macie</td>
+            <td>암호화, 키 관리, 민감 데이터 탐지</td>
+          </tr>
+          <tr>
+            <td><strong>탐지 & 모니터링</strong></td>
+            <td>CloudTrail, Config, GuardDuty, Security Hub, Inspector</td>
+            <td>활동 기록, 위반 탐지, 보안 점수 관리</td>
+          </tr>
+          <tr>
+            <td><strong>사고 대응</strong></td>
+            <td>EventBridge, Lambda, SNS, Systems Manager, Detective</td>
+            <td>자동 알림, 자동 격리, 사고 분석</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ==================== 섹션 2: 자격증명 & 접근 관리 서비스 ==================== -->
+    <section class="content-section" id="identity-access">
+      <h2>2. 자격증명 & 접근 관리 서비스</h2>
+
+      <p>
+        클라우드 보안의 첫 번째이자 가장 중요한 카테고리입니다.
+        Chapter 01에서 배운 것처럼 <strong>"Identity is the New Perimeter"</strong>, 즉 자격증명이 새로운 보안 경계입니다.
+      </p>
+
+      <h3>2.1 AWS IAM (Identity and Access Management)</h3>
+      <p>
+        AWS의 모든 접근 제어의 기반이 되는 서비스입니다.
+        사용자, 그룹, 역할, 정책을 통해 <strong>"누가, 어떤 리소스에, 어떤 작업을, 어떤 조건에서"</strong> 할 수 있는지를 정의합니다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>IAM 구성 요소</th>
+            <th>설명</th>
+            <th>ShopEasy 예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>사용자 (User)</strong></td>
+            <td>AWS 콘솔/CLI 접근을 위한 개별 계정</td>
+            <td>개발자, 운영자 각각 별도 IAM 사용자</td>
+          </tr>
+          <tr>
+            <td><strong>그룹 (Group)</strong></td>
+            <td>사용자를 묶어 동일 정책을 적용</td>
+            <td>Developers, Operations, ReadOnly 그룹</td>
+          </tr>
+          <tr>
+            <td><strong>역할 (Role)</strong></td>
+            <td>서비스나 사용자가 임시로 사용하는 권한 묶음</td>
+            <td>EC2 인스턴스 프로파일, Lambda 실행 역할</td>
+          </tr>
+          <tr>
+            <td><strong>정책 (Policy)</strong></td>
+            <td>JSON으로 정의된 권한 규칙</td>
+            <td>S3 읽기 전용, RDS 접근 허용 정책</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box warning">
+        <div class="info-box-title">IAM 핵심 주의사항</div>
+        <p>
+          <strong>루트 계정</strong>은 일상 작업에 절대 사용하지 마세요. MFA를 설정하고 금고에 넣어두세요.
+          <strong>Access Key</strong>는 가능하면 사용하지 말고, IAM 역할과 임시 자격증명을 활용하세요.
+          이 내용은 Chapter 03~06에서 상세히 다룹니다.
+        </p>
+      </div>
+
+      <h3>2.2 AWS Organizations</h3>
+      <p>
+        여러 AWS 계정을 중앙에서 관리하는 서비스입니다.
+        <strong>서비스 제어 정책(SCP)</strong>을 통해 하위 계정에서 할 수 있는 작업의 최대 범위를 제한할 수 있습니다.
+      </p>
+      <ul>
+        <li><strong>OU (Organizational Unit)</strong>: 계정을 부서/역할별로 그룹화</li>
+        <li><strong>SCP</strong>: 특정 OU나 계정에 적용하는 허용/거부 정책</li>
+        <li><strong>통합 결제</strong>: 모든 계정의 비용을 하나로 관리</li>
+      </ul>
+
+      <h3>2.3 AWS IAM Identity Center (구 AWS SSO)</h3>
+      <p>
+        여러 AWS 계정과 비즈니스 애플리케이션에 <strong>싱글 사인온(SSO)</strong>을 제공합니다.
+        Active Directory, Okta 등 외부 IdP(Identity Provider)와 연동하여 중앙 집중식 인증을 구현합니다.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">자격증명 & 접근 관리 서비스 관계도</div>
+        <div class="diagram-row">
+          <div class="diagram-box user"><div class="box-title">사용자/개발자</div><div class="box-sub">콘솔/CLI 접근</div></div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box iam"><div class="box-title">IAM Identity Center</div><div class="box-sub">SSO 인증</div></div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box iam"><div class="box-title">AWS Organizations</div><div class="box-sub">SCP로 범위 제한</div></div>
+        </div>
+        <div class="diagram-arrow down">&darr;</div>
+        <div class="diagram-row">
+          <div class="diagram-box iam"><div class="box-title">IAM 역할</div><div class="box-sub">임시 자격증명 (STS)</div></div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box compute"><div class="box-title">AWS 리소스</div><div class="box-sub">EC2, S3, RDS 등</div></div>
+        </div>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">ShopEasy와의 연결</div>
+        <p>
+          현재 ShopEasy는 단일 AWS 계정에서 운영되고 있으며, IAM 사용자 하나로 모든 작업을 수행합니다.
+          이 과정에서 역할 기반 접근 제어(RBAC)를 설계하고, EC2에 인스턴스 프로파일을 연결하며,
+          MFA를 강제하는 등의 실습을 진행합니다 (Chapter 03~06).
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== 섹션 3: 네트워크 보안 서비스 ==================== -->
+    <section class="content-section" id="network-security">
+      <h2>3. 네트워크 보안 서비스</h2>
+
+      <p>
+        네트워크 보안은 심층 방어의 핵심 계층입니다.
+        VPC를 기반으로 여러 계층의 네트워크 방어를 구성합니다.
+      </p>
+
+      <h3>3.1 VPC (Virtual Private Cloud) 보안 구성 요소</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>구성 요소</th>
+            <th>작동 수준</th>
+            <th>특징</th>
+            <th>ShopEasy 활용</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>보안그룹 (SG)</strong></td>
+            <td>인스턴스 레벨</td>
+            <td>상태 유지(Stateful), 허용 규칙만 설정</td>
+            <td>EC2, RDS, ALB 각각에 최소 포트만 개방</td>
+          </tr>
+          <tr>
+            <td><strong>NACL</strong></td>
+            <td>서브넷 레벨</td>
+            <td>상태 비저장(Stateless), 허용/거부 규칙 모두 가능</td>
+            <td>관리 포트(SSH) 접근 IP 제한</td>
+          </tr>
+          <tr>
+            <td><strong>프라이빗 서브넷</strong></td>
+            <td>서브넷 레벨</td>
+            <td>인터넷에서 직접 접근 불가</td>
+            <td>RDS를 프라이빗 서브넷에 배치</td>
+          </tr>
+          <tr>
+            <td><strong>VPC Flow Logs</strong></td>
+            <td>VPC/서브넷/ENI 레벨</td>
+            <td>네트워크 트래픽 로깅</td>
+            <td>의심스러운 트래픽 패턴 탐지</td>
+          </tr>
+          <tr>
+            <td><strong>VPC Endpoints</strong></td>
+            <td>VPC 레벨</td>
+            <td>인터넷 경유 없이 AWS 서비스 접근</td>
+            <td>S3, DynamoDB 접근 시 트래픽 VPC 내부 유지</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>3.2 AWS WAF (Web Application Firewall)</h3>
+      <p>
+        웹 애플리케이션을 SQL Injection, XSS(Cross-Site Scripting), Bot 등의 공격으로부터 보호합니다.
+        CloudFront, ALB, API Gateway에 연결하여 사용합니다.
+      </p>
+      <ul>
+        <li><strong>Web ACL</strong>: 규칙의 모음. CloudFront/ALB에 연결</li>
+        <li><strong>관리형 규칙 (Managed Rules)</strong>: AWS 및 마켓플레이스에서 제공하는 사전 정의된 규칙 세트</li>
+        <li><strong>커스텀 규칙</strong>: IP 기반, 요청 속도 기반, 문자열 매칭 등 직접 정의</li>
+        <li><strong>Rate-based Rule</strong>: 특정 IP에서 5분간 요청 수 제한 (DDoS 완화)</li>
+      </ul>
+
+      <h3>3.3 AWS Shield</h3>
+      <p>
+        DDoS(분산 서비스 거부) 공격 방어 서비스입니다.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>구분</th>
+            <th>Shield Standard</th>
+            <th>Shield Advanced</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>비용</strong></td>
+            <td>무료 (모든 AWS 고객)</td>
+            <td>월 $3,000 + 데이터 전송 비용</td>
+          </tr>
+          <tr>
+            <td><strong>보호 대상</strong></td>
+            <td>L3/L4 DDoS 자동 방어</td>
+            <td>L3/L4/L7 고급 방어 + WAF 무료 포함</td>
+          </tr>
+          <tr>
+            <td><strong>지원</strong></td>
+            <td>자동</td>
+            <td>24/7 Shield Response Team (SRT)</td>
+          </tr>
+          <tr>
+            <td><strong>비용 보호</strong></td>
+            <td>없음</td>
+            <td>DDoS로 인한 스케일링 비용 환불</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>3.4 AWS Firewall Manager</h3>
+      <p>
+        Organizations 환경에서 여러 계정의 WAF 규칙, Shield Advanced, 보안그룹을 <strong>중앙에서 일괄 관리</strong>합니다.
+        새로 생성되는 리소스에도 자동으로 보안 정책이 적용됩니다.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">네트워크 보안 서비스 계층 구조</div>
+        <div class="diagram-group security-layer" style="padding: 1.5rem;">
+          <div class="diagram-group-label">엣지 보안</div>
+          <div class="diagram-row">
+            <div class="diagram-box shield"><div class="box-title">Shield</div><div class="box-sub">DDoS 방어</div></div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box waf"><div class="box-title">WAF</div><div class="box-sub">웹 공격 필터링</div></div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box cdn"><div class="box-title">CloudFront</div><div class="box-sub">CDN / HTTPS</div></div>
+          </div>
+        </div>
+        <div class="diagram-arrow down">&darr;</div>
+        <div class="diagram-group vpc" style="padding: 1.5rem;">
+          <div class="diagram-group-label">VPC 내부 보안</div>
+          <div class="diagram-row">
+            <div class="diagram-box network"><div class="box-title">NACL</div><div class="box-sub">서브넷 방화벽</div></div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box network"><div class="box-title">Security Group</div><div class="box-sub">인스턴스 방화벽</div></div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-box compute"><div class="box-title">EC2 / RDS</div><div class="box-sub">워크로드</div></div>
+          </div>
+        </div>
+        <div class="diagram-row" style="margin-top: 1rem;">
+          <div class="diagram-box monitor"><div class="box-title">VPC Flow Logs</div><div class="box-sub">모든 네트워크 트래픽 로깅</div></div>
+        </div>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">ShopEasy 네트워크 보안 실습 예고</div>
+        <p>
+          Chapter 07에서 보안그룹 체이닝과 NACL 활용, Chapter 08에서 WAF 규칙 구성,
+          Chapter 09에서 ShopEasy에 이 모든 것을 종합 적용하는 실습을 진행합니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== 섹션 4: 데이터 보호 서비스 ==================== -->
+    <section class="content-section" id="data-protection">
+      <h2>4. 데이터 보호 서비스</h2>
+
+      <p>
+        데이터는 기업의 가장 중요한 자산입니다.
+        AWS는 데이터를 <strong>전송 중(in-transit)</strong>과 <strong>저장 시(at-rest)</strong> 모두 보호할 수 있는 서비스를 제공합니다.
+      </p>
+
+      <h3>4.1 AWS KMS (Key Management Service)</h3>
+      <p>
+        암호화 키를 생성, 저장, 관리하는 핵심 서비스입니다.
+        대부분의 AWS 서비스(S3, EBS, RDS, DynamoDB 등)와 통합되어 클릭 한 번으로 암호화를 활성화할 수 있습니다.
+      </p>
+      <ul>
+        <li><strong>AWS 관리형 키</strong>: AWS가 자동 생성/관리. 무료</li>
+        <li><strong>고객 관리형 키 (CMK)</strong>: 고객이 생성/관리. 키 정책, 로테이션 직접 제어</li>
+        <li><strong>봉투 암호화 (Envelope Encryption)</strong>: 데이터 키를 마스터 키로 감싸는 효율적 암호화 방식</li>
+      </ul>
+
+      <h3>4.2 AWS CloudHSM</h3>
+      <p>
+        전용 하드웨어 보안 모듈(HSM)을 제공합니다.
+        FIPS 140-2 Level 3 인증을 받은 하드웨어에서 키를 관리하며,
+        금융, 의료 등 엄격한 규제 요구사항이 있는 경우 사용합니다.
+        KMS와 달리 <strong>고객이 키에 대한 완전한 통제권</strong>을 가집니다.
+      </p>
+
+      <h3>4.3 AWS Secrets Manager</h3>
+      <p>
+        DB 비밀번호, API 키, OAuth 토큰 등 <strong>비밀 정보를 안전하게 저장하고 자동 교체</strong>합니다.
+      </p>
+      <ul>
+        <li>비밀번호를 코드나 .env 파일에 하드코딩하지 않아도 됨</li>
+        <li>Lambda를 활용한 <strong>자동 로테이션</strong> (30/60/90일 주기)</li>
+        <li>RDS, Redshift, DocumentDB와의 기본 통합</li>
+        <li>KMS로 저장 시 암호화</li>
+      </ul>
+
+      <div class="info-box warning">
+        <div class="info-box-title">Parameter Store vs Secrets Manager</div>
+        <p>
+          <strong>SSM Parameter Store</strong>는 설정값 저장에 적합하고 무료(Standard 티어).
+          <strong>Secrets Manager</strong>는 비밀번호 자동 교체가 필요할 때 사용하며 유료(비밀당 $0.40/월).
+          ShopEasy에서는 DB 비밀번호는 Secrets Manager, 일반 설정은 Parameter Store를 사용합니다 (Chapter 13).
+        </p>
+      </div>
+
+      <h3>4.4 AWS Certificate Manager (ACM)</h3>
+      <p>
+        SSL/TLS 인증서를 <strong>무료</strong>로 발급, 관리, 갱신합니다.
+        CloudFront, ALB, API Gateway에 연결하여 HTTPS를 쉽게 적용합니다.
+        인증서 만료 걱정 없이 자동 갱신됩니다.
+      </p>
+
+      <h3>4.5 Amazon Macie</h3>
+      <p>
+        머신러닝을 활용하여 S3 버킷에서 <strong>개인식별정보(PII), 금융 데이터 등 민감 데이터를 자동 탐지</strong>합니다.
+        데이터 분류(Data Classification)와 규제 준수에 활용됩니다.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">데이터 보호 서비스 전체 구성</div>
+        <div class="diagram-row">
+          <div class="diagram-box encryption"><div class="box-title">KMS</div><div class="box-sub">키 생성 & 관리<br>봉투 암호화</div></div>
+          <div class="diagram-box encryption"><div class="box-title">CloudHSM</div><div class="box-sub">전용 HSM<br>FIPS 140-2 L3</div></div>
+          <div class="diagram-box security"><div class="box-title">Secrets Manager</div><div class="box-sub">비밀번호 관리<br>자동 로테이션</div></div>
+        </div>
+        <div class="diagram-row" style="margin-top: 1rem;">
+          <div class="diagram-box shield"><div class="box-title">ACM</div><div class="box-sub">SSL/TLS 인증서<br>무료 발급 & 갱신</div></div>
+          <div class="diagram-box detective"><div class="box-title">Macie</div><div class="box-sub">민감 데이터 탐지<br>데이터 분류</div></div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>서비스</th>
+            <th>주요 기능</th>
+            <th>비용</th>
+            <th>관련 챕터</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>KMS</strong></td>
+            <td>암호화 키 관리, S3/EBS/RDS 암호화</td>
+            <td>CMK 1개당 $1/월 + API 호출 비용</td>
+            <td>Ch.10</td>
+          </tr>
+          <tr>
+            <td><strong>CloudHSM</strong></td>
+            <td>전용 HSM, 완전한 키 통제</td>
+            <td>시간당 $1.6~</td>
+            <td>Ch.10 (소개)</td>
+          </tr>
+          <tr>
+            <td><strong>Secrets Manager</strong></td>
+            <td>비밀번호 저장, 자동 로테이션</td>
+            <td>비밀당 $0.40/월</td>
+            <td>Ch.13</td>
+          </tr>
+          <tr>
+            <td><strong>ACM</strong></td>
+            <td>SSL/TLS 인증서 무료 발급</td>
+            <td>무료 (퍼블릭 인증서)</td>
+            <td>Ch.14</td>
+          </tr>
+          <tr>
+            <td><strong>Macie</strong></td>
+            <td>S3 민감 데이터 자동 탐지</td>
+            <td>스캔 데이터 GB당 $1</td>
+            <td>Ch.11 (소개)</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ==================== 섹션 5: 탐지 & 모니터링 서비스 ==================== -->
+    <section class="content-section" id="detection-monitoring">
+      <h2>5. 탐지 & 모니터링 서비스</h2>
+
+      <p>
+        예방이 아무리 완벽해도 보안 사고는 발생할 수 있습니다.
+        핵심은 <strong>얼마나 빨리 탐지하고 대응하느냐</strong>입니다.
+        AWS의 탐지 서비스들은 서로 연동되어 포괄적인 보안 모니터링 체계를 구성합니다.
+      </p>
+
+      <h3>5.1 AWS CloudTrail</h3>
+      <p>
+        AWS 계정의 <strong>모든 API 호출을 기록</strong>하는 감사(Audit) 서비스입니다.
+        "누가, 언제, 어떤 API를, 어디서 호출했는가"를 추적합니다.
+      </p>
+      <ul>
+        <li><strong>관리 이벤트</strong>: 리소스 생성/삭제/수정 (예: EC2 시작, IAM 정책 변경)</li>
+        <li><strong>데이터 이벤트</strong>: 리소스 내부 활동 (예: S3 객체 읽기/쓰기, Lambda 호출)</li>
+        <li><strong>인사이트 이벤트</strong>: 비정상적인 API 호출 패턴 탐지</li>
+      </ul>
+
+      <div class="info-box danger">
+        <div class="info-box-title">CloudTrail은 보안의 기본 중 기본</div>
+        <p>
+          CloudTrail을 활성화하지 않으면 보안 사고가 발생해도 <strong>원인 분석이 불가능</strong>합니다.
+          "CCTV 없이 건물을 운영하는 것"과 같습니다.
+          <strong>반드시 첫 번째로 활성화</strong>해야 하는 서비스입니다 (Chapter 17).
+        </p>
+      </div>
+
+      <h3>5.2 AWS Config</h3>
+      <p>
+        AWS 리소스의 <strong>구성 변경 이력을 추적하고, 규칙 기반으로 규정 준수를 자동 확인</strong>합니다.
+      </p>
+      <ul>
+        <li><strong>구성 기록</strong>: "이 보안그룹이 언제, 누가 변경했는지" 이력 확인</li>
+        <li><strong>Config Rules</strong>: "S3 버킷에 퍼블릭 읽기가 허용되면 비준수" 같은 규칙 자동 검사</li>
+        <li><strong>적합성 팩</strong>: 여러 규칙을 묶은 보안 템플릿 (PCI DSS, CIS Benchmark 등)</li>
+        <li><strong>자동 교정</strong>: 비준수 리소스를 SSM Automation으로 자동 수정</li>
+      </ul>
+
+      <h3>5.3 Amazon GuardDuty</h3>
+      <p>
+        머신러닝 기반의 <strong>위협 탐지 서비스</strong>입니다.
+        CloudTrail, VPC Flow Logs, DNS Logs를 분석하여 의심스러운 활동을 자동으로 탐지합니다.
+      </p>
+      <ul>
+        <li>암호화폐 채굴 탐지</li>
+        <li>IAM 자격증명 도용 탐지</li>
+        <li>비정상적인 API 호출 패턴</li>
+        <li>알려진 악성 IP/도메인과의 통신 탐지</li>
+        <li>S3 데이터 유출 시도 탐지</li>
+      </ul>
+
+      <h3>5.4 AWS Security Hub</h3>
+      <p>
+        여러 보안 서비스의 결과를 <strong>하나의 대시보드에 통합</strong>하고, 보안 점수를 제공합니다.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">탐지 & 모니터링 서비스 연동 구조</div>
+        <div class="diagram-row">
+          <div class="diagram-box detective"><div class="box-title">CloudTrail</div><div class="box-sub">API 호출 기록</div></div>
+          <div class="diagram-box detective"><div class="box-title">VPC Flow Logs</div><div class="box-sub">네트워크 트래픽</div></div>
+          <div class="diagram-box detective"><div class="box-title">Config</div><div class="box-sub">구성 변경 추적</div></div>
+        </div>
+        <div class="diagram-arrow down">&darr; 데이터 수집 &darr;</div>
+        <div class="diagram-row">
+          <div class="diagram-box security"><div class="box-title">GuardDuty</div><div class="box-sub">ML 기반 위협 탐지</div></div>
+          <div class="diagram-box security"><div class="box-title">Inspector</div><div class="box-sub">취약점 스캔</div></div>
+          <div class="diagram-box security"><div class="box-title">Macie</div><div class="box-sub">민감 데이터 탐지</div></div>
+        </div>
+        <div class="diagram-arrow down">&darr; 결과 통합 &darr;</div>
+        <div class="diagram-row">
+          <div class="diagram-box shield"><div class="box-title">Security Hub</div><div class="box-sub">통합 대시보드 & 보안 점수<br>CIS Benchmark, AWS 표준</div></div>
+        </div>
+        <div class="diagram-arrow down">&darr; 알림 & 대응 &darr;</div>
+        <div class="diagram-row">
+          <div class="diagram-box monitor"><div class="box-title">EventBridge</div><div class="box-sub">이벤트 라우팅</div></div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box serverless"><div class="box-title">Lambda</div><div class="box-sub">자동 대응</div></div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box queue"><div class="box-title">SNS</div><div class="box-sub">알림 발송</div></div>
+        </div>
+      </div>
+
+      <h3>5.5 Amazon Inspector</h3>
+      <p>
+        EC2 인스턴스, ECR 컨테이너 이미지, Lambda 함수의 <strong>소프트웨어 취약점과 네트워크 노출을 자동 스캔</strong>합니다.
+        CVE(Common Vulnerabilities and Exposures) 데이터베이스를 기반으로 알려진 취약점을 탐지합니다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>서비스</th>
+            <th>무엇을 탐지하는가?</th>
+            <th>데이터 소스</th>
+            <th>관련 챕터</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>CloudTrail</strong></td>
+            <td>누가 어떤 API를 호출했는지</td>
+            <td>AWS API 호출</td>
+            <td>Ch.17</td>
+          </tr>
+          <tr>
+            <td><strong>Config</strong></td>
+            <td>리소스 설정이 규칙을 준수하는지</td>
+            <td>리소스 구성 변경</td>
+            <td>Ch.18</td>
+          </tr>
+          <tr>
+            <td><strong>GuardDuty</strong></td>
+            <td>악의적 활동, 이상 행위</td>
+            <td>CloudTrail, Flow Logs, DNS</td>
+            <td>Ch.19</td>
+          </tr>
+          <tr>
+            <td><strong>Security Hub</strong></td>
+            <td>전체 보안 상태 점수</td>
+            <td>GuardDuty, Inspector, Config, Macie 등</td>
+            <td>Ch.19</td>
+          </tr>
+          <tr>
+            <td><strong>Inspector</strong></td>
+            <td>소프트웨어 취약점, 네트워크 노출</td>
+            <td>EC2, ECR, Lambda</td>
+            <td>Ch.19 (소개)</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ==================== 섹션 6: ShopEasy 현재 아키텍처 보안 취약점 분석 ==================== -->
+    <section class="content-section" id="shopeasy-vulnerabilities">
+      <h2>6. ShopEasy 현재 아키텍처 보안 취약점 분석</h2>
+
+      <p>
+        기초 과정에서 구축한 ShopEasy 아키텍처를 보안 관점에서 분석해보겠습니다.
+        현재 아키텍처는 기능 구현에 초점을 맞추어 <strong>보안 설정이 최소화</strong>되어 있습니다.
+        실제 프로덕션 환경에서는 절대 이 상태로 운영해서는 안 됩니다.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">ShopEasy 현재 아키텍처 - 보안 취약점 표시</div>
+        <div class="diagram-row">
+          <div class="diagram-box user"><div class="box-title">사용자</div><div class="box-sub">브라우저</div></div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box cdn">
+            <div class="box-title">CloudFront</div>
+            <div class="box-sub" style="color:#C62828;">HTTP 허용<br>OAC 미설정</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box network">
+            <div class="box-title">ALB</div>
+            <div class="box-sub" style="color:#C62828;">WAF 미연동</div>
+          </div>
+        </div>
+        <div class="diagram-arrow down">&darr;</div>
+        <div class="diagram-group vpc" style="padding: 1.5rem;">
+          <div class="diagram-group-label">VPC</div>
+          <div class="diagram-row">
+            <div class="diagram-group subnet-pub" style="padding: 1rem;">
+              <div class="diagram-group-label">Public Subnet</div>
+              <div class="diagram-box compute">
+                <div class="box-title">EC2 (API Server)</div>
+                <div class="box-sub" style="color:#C62828;">SSH 0.0.0.0/0 개방<br>Access Key 하드코딩<br>OS 패치 미적용</div>
+              </div>
+            </div>
+            <div class="diagram-arrow">&rarr;</div>
+            <div class="diagram-group subnet-priv" style="padding: 1rem;">
+              <div class="diagram-group-label">Private Subnet</div>
+              <div class="diagram-box database">
+                <div class="box-title">RDS MySQL</div>
+                <div class="box-sub" style="color:#C62828;">암호화 미적용<br>비밀번호 .env 저장</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="diagram-row" style="margin-top: 1rem;">
+          <div class="diagram-box storage">
+            <div class="box-title">S3 (상품 이미지)</div>
+            <div class="box-sub" style="color:#C62828;">퍼블릭 액세스 위험<br>암호화 미적용</div>
+          </div>
+          <div class="diagram-box iam">
+            <div class="box-title">IAM</div>
+            <div class="box-sub" style="color:#C62828;">루트 계정 사용<br>MFA 미설정<br>과도한 권한</div>
+          </div>
+          <div class="diagram-box detective">
+            <div class="box-title">모니터링</div>
+            <div class="box-sub" style="color:#C62828;">CloudTrail 미설정<br>알림 없음</div>
+          </div>
+        </div>
+      </div>
+
+      <h3>카테고리별 취약점 상세 분석</h3>
+
+      <div class="info-box danger">
+        <div class="info-box-title">취약점 1: 자격증명 & 접근 관리</div>
+        <p>
+          <strong>루트 계정으로 일상 작업 수행</strong> - 루트 계정은 모든 권한을 가지므로 탈취 시 전체 인프라 장악 가능<br>
+          <strong>MFA 미설정</strong> - 비밀번호만으로 계정 접근 가능. 브루트포스/피싱 공격에 취약<br>
+          <strong>Access Key 하드코딩</strong> - EC2 인스턴스의 .env 파일이나 코드에 영구 Access Key가 저장됨<br>
+          <strong>IAM 정책 과도 권한</strong> - AdministratorAccess나 * 와일드카드 정책 사용
+        </p>
+      </div>
+
+      <div class="info-box danger">
+        <div class="info-box-title">취약점 2: 네트워크 보안</div>
+        <p>
+          <strong>SSH 포트 전체 개방</strong> - 보안그룹에서 22번 포트가 0.0.0.0/0으로 열려 있어 전 세계에서 SSH 접속 시도 가능<br>
+          <strong>WAF 미적용</strong> - SQL Injection, XSS 등 웹 공격에 무방비<br>
+          <strong>NACL 기본 설정</strong> - 모든 인바운드/아웃바운드 트래픽 허용<br>
+          <strong>VPC Flow Logs 비활성화</strong> - 네트워크 트래픽 분석 불가
+        </p>
+      </div>
+
+      <div class="info-box danger">
+        <div class="info-box-title">취약점 3: 데이터 보호</div>
+        <p>
+          <strong>RDS 암호화 미적용</strong> - 디스크에 데이터가 평문으로 저장됨<br>
+          <strong>DB 비밀번호 .env 파일 저장</strong> - 파일 유출 시 DB 접근 가능<br>
+          <strong>S3 버킷 암호화 미적용</strong> - 상품 이미지가 암호화 없이 저장됨<br>
+          <strong>전송 중 암호화 미완성</strong> - 일부 구간에서 HTTP 통신
+        </p>
+      </div>
+
+      <div class="info-box danger">
+        <div class="info-box-title">취약점 4: 탐지 & 모니터링</div>
+        <p>
+          <strong>CloudTrail 미설정</strong> - API 호출 기록 없음. 보안 사고 시 원인 분석 불가<br>
+          <strong>Config 미설정</strong> - 리소스 구성 변경 추적 불가<br>
+          <strong>GuardDuty 미활성화</strong> - 위협 탐지 체계 없음<br>
+          <strong>보안 알림 없음</strong> - 비정상 활동 발생 시 통보 체계 부재
+        </p>
+      </div>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 현재 ShopEasy는...</div>
+        <p>
+          문을 열어둔 채로 영업하면서, CCTV도 없고, 금고 자물쇠도 안 잠그고,
+          직원 전원에게 마스터키를 나눠준 가게와 같습니다.
+          기능적으로는 작동하지만, 보안 사고가 발생하는 것은 시간문제입니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== 섹션 7: 보안 적용 로드맵 ==================== -->
+    <section class="content-section" id="security-roadmap">
+      <h2>7. 보안 적용 로드맵</h2>
+
+      <p>
+        이 과정에서 ShopEasy에 적용할 보안 서비스들의 순서와 우선순위입니다.
+        <strong>가장 시급한 것부터</strong> 순서대로 진행합니다.
+      </p>
+
+      <h3>Phase 1: 기반 구축 (Chapter 03~06)</h3>
+      <div class="info-box best-practice">
+        <div class="info-box-title">우선순위: 최상</div>
+        <p>
+          <strong>IAM 정비가 가장 먼저입니다.</strong>
+          자격증명이 탈취되면 다른 모든 보안 설정이 무력화됩니다.
+          루트 계정 잠금, MFA 설정, 역할 기반 접근 제어, 인스턴스 프로파일 전환을 수행합니다.
+        </p>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>챕터</th>
+            <th>적용 서비스</th>
+            <th>ShopEasy 변경 사항</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Ch.03</td>
+            <td>IAM 정책 심화</td>
+            <td>최소 권한 정책 설계 및 시뮬레이터 검증</td>
+          </tr>
+          <tr>
+            <td>Ch.04</td>
+            <td>IAM 역할, STS</td>
+            <td>Access Key 제거, 인스턴스 프로파일 연결</td>
+          </tr>
+          <tr>
+            <td>Ch.05</td>
+            <td>Permission Boundary</td>
+            <td>권한 경계 설정, IAM Access Analyzer 활용</td>
+          </tr>
+          <tr>
+            <td>Ch.06</td>
+            <td>IAM 종합 실습</td>
+            <td>그룹별 권한, MFA 강제 정책 적용</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Phase 2: 네트워크 보안 (Chapter 07~09)</h3>
+      <div class="info-box best-practice">
+        <div class="info-box-title">우선순위: 상</div>
+        <p>
+          외부 공격으로부터 보호하는 네트워크 계층을 강화합니다.
+          보안그룹 최적화, WAF 적용, SSH 접근을 Session Manager로 전환합니다.
+        </p>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>챕터</th>
+            <th>적용 서비스</th>
+            <th>ShopEasy 변경 사항</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Ch.07</td>
+            <td>VPC 보안 심화</td>
+            <td>보안그룹 체이닝, NACL 제한, Flow Logs 활성화</td>
+          </tr>
+          <tr>
+            <td>Ch.08</td>
+            <td>WAF</td>
+            <td>SQL Injection/XSS 방어 규칙, Rate Limiting</td>
+          </tr>
+          <tr>
+            <td>Ch.09</td>
+            <td>종합 네트워크 보안</td>
+            <td>SSH 제거 &rarr; Session Manager, WAF 연동</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Phase 3: 데이터 보호 (Chapter 10~13)</h3>
+      <div class="info-box best-practice">
+        <div class="info-box-title">우선순위: 상</div>
+        <p>
+          저장된 데이터와 전송 중인 데이터를 모두 암호화합니다.
+          DB 비밀번호를 Secrets Manager로 이전하고 자동 로테이션을 설정합니다.
+        </p>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>챕터</th>
+            <th>적용 서비스</th>
+            <th>ShopEasy 변경 사항</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Ch.10</td>
+            <td>KMS</td>
+            <td>CMK 생성, EBS/RDS/S3 암호화 적용</td>
+          </tr>
+          <tr>
+            <td>Ch.11</td>
+            <td>S3 보안</td>
+            <td>퍼블릭 액세스 차단, SSE-KMS 암호화, 버킷 정책</td>
+          </tr>
+          <tr>
+            <td>Ch.12</td>
+            <td>RDS/DynamoDB 보안</td>
+            <td>RDS 암호화, IAM 인증, SSL/TLS 강제</td>
+          </tr>
+          <tr>
+            <td>Ch.13</td>
+            <td>Secrets Manager</td>
+            <td>.env &rarr; Secrets Manager, 자동 로테이션</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Phase 4: 앱 & 엣지 보안 (Chapter 14~16)</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>챕터</th>
+            <th>적용 서비스</th>
+            <th>ShopEasy 변경 사항</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Ch.14</td>
+            <td>CloudFront 보안</td>
+            <td>OAC 설정, HTTPS 강제, Signed URL</td>
+          </tr>
+          <tr>
+            <td>Ch.15</td>
+            <td>API Gateway 보안</td>
+            <td>인증, 스로틀링, WAF 연동</td>
+          </tr>
+          <tr>
+            <td>Ch.16</td>
+            <td>Lambda 보안</td>
+            <td>최소 권한 실행 역할, 환경변수 암호화</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Phase 5: 탐지 & 대응 (Chapter 17~22)</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>챕터</th>
+            <th>적용 서비스</th>
+            <th>ShopEasy 변경 사항</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Ch.17</td>
+            <td>CloudTrail</td>
+            <td>트레일 생성, S3 저장, 로그 무결성 검증</td>
+          </tr>
+          <tr>
+            <td>Ch.18</td>
+            <td>Config</td>
+            <td>보안 규칙 설정, 비준수 대시보드</td>
+          </tr>
+          <tr>
+            <td>Ch.19</td>
+            <td>GuardDuty + Security Hub</td>
+            <td>위협 탐지, 보안 점수 확인</td>
+          </tr>
+          <tr>
+            <td>Ch.20</td>
+            <td>사고 대응 자동화</td>
+            <td>EventBridge + Lambda 자동 대응</td>
+          </tr>
+          <tr>
+            <td>Ch.21</td>
+            <td>Organizations + SCP</td>
+            <td>멀티 계정 전략, 가드레일 설계</td>
+          </tr>
+          <tr>
+            <td>Ch.22</td>
+            <td>보안 아키텍처 패턴</td>
+            <td>Before/After 비교, 최종 아키텍처</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="diagram">
+        <div class="diagram-title">보안 적용 로드맵 타임라인</div>
+        <div class="diagram-row">
+          <div class="diagram-box iam" style="min-width: 120px;">
+            <div class="box-title">Phase 1</div>
+            <div class="box-sub">IAM & 자격증명<br>Ch.03~06</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box network" style="min-width: 120px;">
+            <div class="box-title">Phase 2</div>
+            <div class="box-sub">네트워크 보안<br>Ch.07~09</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box encryption" style="min-width: 120px;">
+            <div class="box-title">Phase 3</div>
+            <div class="box-sub">데이터 보호<br>Ch.10~13</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box waf" style="min-width: 120px;">
+            <div class="box-title">Phase 4</div>
+            <div class="box-sub">앱 & 엣지<br>Ch.14~16</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box detective" style="min-width: 120px;">
+            <div class="box-title">Phase 5</div>
+            <div class="box-sub">탐지 & 대응<br>Ch.17~22</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box concept">
+        <div class="info-box-title">왜 이 순서인가?</div>
+        <p>
+          <strong>IAM이 가장 먼저</strong>인 이유: 자격증명이 탈취되면 네트워크 보안이나 암호화가 무의미해집니다.
+          공격자가 관리자 권한을 가지면 보안그룹을 열고, 암호화를 해제하고, 로그를 삭제할 수 있기 때문입니다.<br><br>
+          <strong>탐지가 마지막</strong>인 이유: 예방 조치가 먼저 갖춰진 상태에서 모니터링을 시작해야
+          불필요한 노이즈 없이 실제 위협에 집중할 수 있습니다.
+        </p>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">다음 챕터 미리보기</div>
+        <p>
+          Chapter 03부터 본격적인 보안 실습이 시작됩니다.
+          먼저 IAM 정책 언어를 심화 학습하여, JSON 정책 구조, 정책 평가 로직,
+          Condition 키 활용법을 마스터합니다.
+          이 지식이 이후 모든 챕터에서 활용되는 기반이 됩니다.
+        </p>
+      </div>
+    </section>
+
+    <div class="chapter-nav">
+      <a href="01-cloud-security-overview.html" class="prev">이전: 클라우드 보안 개요 & 공동 책임 모델</a>
+      <a href="03-iam-policy-deep-dive.html" class="next">다음: IAM 정책 언어 심화</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/02-security-services-map.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>

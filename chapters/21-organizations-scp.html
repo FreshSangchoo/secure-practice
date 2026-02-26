@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/21-organizations-scp.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AWS Organizations & SCP - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li><a href="#why-multi-account">멀티 계정 전략이 필요한 이유</a></li>
+      <li><a href="#organizations-overview">AWS Organizations 개요</a></li>
+      <li><a href="#recommended-ou-structure">추천 OU 구조</a></li>
+      <li><a href="#scp-concept">SCP 개념</a></li>
+      <li><a href="#scp-examples">주요 SCP 예제</a></li>
+      <li><a href="#guardrails">가드레일 개념</a></li>
+      <li><a href="#control-tower">AWS Control Tower</a></li>
+      <li><a href="#lab-scp-simulation">실습: SCP 정책 작성</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 21</span>
+      <h1>AWS Organizations & SCP</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>멀티 계정 전략의 필요성과 단일 계정의 보안 문제점을 이해한다</li>
+          <li>AWS Organizations의 루트, OU, 계정 계층 구조를 설명할 수 있다</li>
+          <li>엔터프라이즈 환경에 적합한 OU 구조를 설계할 수 있다</li>
+          <li>SCP(서비스 제어 정책)의 개념과 IAM 정책과의 차이를 이해한다</li>
+          <li>주요 SCP 예제를 작성하고 시뮬레이션할 수 있다</li>
+          <li>예방적/탐지적 가드레일의 차이를 설명할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 섹션 1: 멀티 계정 전략이 필요한 이유 -->
+    <section class="content-section" id="why-multi-account">
+      <h2>1. 멀티 계정 전략이 필요한 이유</h2>
+
+      <p>
+        AWS 기초 과정에서 ShopEasy를 구축할 때 하나의 AWS 계정에서 모든 리소스를 관리했습니다.
+        소규모 프로젝트에서는 문제가 없지만, 실제 기업 환경에서 단일 계정 전략은
+        심각한 보안 위험을 초래합니다.
+      </p>
+
+      <h3>단일 계정의 문제점</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>문제 영역</th>
+            <th>단일 계정 위험</th>
+            <th>멀티 계정 해결</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>보안 격리</strong></td>
+            <td>개발자가 실수로 프로덕션 DB를 삭제할 수 있음</td>
+            <td>환경별 계정 분리로 영향 범위 제한</td>
+          </tr>
+          <tr>
+            <td><strong>권한 관리</strong></td>
+            <td>IAM 정책이 복잡해지고 관리 어려움</td>
+            <td>계정 수준에서 SCP로 대규모 권한 통제</td>
+          </tr>
+          <tr>
+            <td><strong>비용 추적</strong></td>
+            <td>팀/프로젝트별 비용 분리 어려움</td>
+            <td>계정별 비용 자동 분리</td>
+          </tr>
+          <tr>
+            <td><strong>서비스 한도</strong></td>
+            <td>모든 팀이 계정 한도를 공유 (예: VPC 수)</td>
+            <td>계정별 독립적 서비스 한도</td>
+          </tr>
+          <tr>
+            <td><strong>규정 준수</strong></td>
+            <td>PCI-DSS, ISMS 등 규정 준수 범위가 전체로 확대</td>
+            <td>규정 준수 대상만 별도 계정으로 범위 축소</td>
+          </tr>
+          <tr>
+            <td><strong>침해 영향</strong></td>
+            <td>하나가 침해되면 모든 리소스 위험</td>
+            <td>"폭발 반경(Blast Radius)" 최소화</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 아파트 vs 단독주택</div>
+        <p>
+          단일 계정은 모든 팀이 한 집에 사는 것과 같습니다. 누군가 현관문을 열어두면 모두가 위험해집니다.
+          멀티 계정은 각 팀이 별도의 집에 사는 아파트 단지와 같습니다. 한 집에 문제가 생겨도
+          다른 집은 안전하며, 단지 관리소(Organizations)가 전체 규칙을 관리합니다.
+        </p>
+      </div>
+
+      <div class="info-box concept">
+        <div class="info-box-title">폭발 반경(Blast Radius) 최소화</div>
+        <p>
+          "폭발 반경"은 보안 사고 발생 시 영향을 받는 범위를 의미합니다.
+          멀티 계정 전략의 핵심 목표는 이 폭발 반경을 최소화하는 것입니다.
+          계정 하나가 침해되더라도 다른 계정의 리소스는 영향을 받지 않습니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 2: AWS Organizations 개요 -->
+    <section class="content-section" id="organizations-overview">
+      <h2>2. AWS Organizations 개요</h2>
+
+      <p>
+        AWS Organizations는 여러 AWS 계정을 중앙에서 관리하는 서비스입니다.
+        계정 생성, 그룹화, 정책 적용을 한 곳에서 수행할 수 있습니다.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">AWS Organizations 계층 구조</div>
+        <div class="diagram-row">
+          <div class="diagram-box iam">
+            <div class="box-title">루트 (Root)</div>
+            <div class="box-sub">조직의 최상위 컨테이너</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-arrow">&darr;</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box security">
+            <div class="box-title">OU: Security</div>
+            <div class="box-sub">보안 전용 계정</div>
+          </div>
+          <div class="diagram-box monitor">
+            <div class="box-title">OU: Infrastructure</div>
+            <div class="box-sub">공유 인프라 계정</div>
+          </div>
+          <div class="diagram-box compute">
+            <div class="box-title">OU: Workloads</div>
+            <div class="box-sub">워크로드 계정</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-arrow">&darr;</div>
+          <div class="diagram-arrow">&darr;</div>
+          <div class="diagram-arrow">&darr;</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box detective">
+            <div class="box-title">Log Archive</div>
+            <div class="box-sub">로그 집중 계정</div>
+          </div>
+          <div class="diagram-box network">
+            <div class="box-title">Network</div>
+            <div class="box-sub">네트워크 허브</div>
+          </div>
+          <div class="diagram-box serverless">
+            <div class="box-title">Production</div>
+            <div class="box-sub">프로덕션 환경</div>
+          </div>
+        </div>
+      </div>
+
+      <h3>핵심 구성 요소</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>구성 요소</th>
+            <th>설명</th>
+            <th>특징</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>관리 계정 (Management Account)</strong></td>
+            <td>Organizations를 생성한 계정, 조직 전체를 관리</td>
+            <td>SCP가 적용되지 않음, 워크로드 배치 금지 권장</td>
+          </tr>
+          <tr>
+            <td><strong>멤버 계정 (Member Account)</strong></td>
+            <td>조직에 속한 개별 AWS 계정</td>
+            <td>SCP의 영향을 받음, 독립적 리소스 관리</td>
+          </tr>
+          <tr>
+            <td><strong>조직 단위 (OU)</strong></td>
+            <td>계정을 그룹화하는 논리적 컨테이너</td>
+            <td>OU는 중첩 가능 (최대 5단계), SCP 상속</td>
+          </tr>
+          <tr>
+            <td><strong>루트 (Root)</strong></td>
+            <td>조직의 최상위 컨테이너</td>
+            <td>모든 OU와 계정의 부모, SCP 적용 시 전체에 영향</td>
+          </tr>
+          <tr>
+            <td><strong>SCP (서비스 제어 정책)</strong></td>
+            <td>OU 또는 계정에 적용하는 권한 경계</td>
+            <td>허용 가능한 최대 권한을 제한</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box warning">
+        <div class="info-box-title">관리 계정 보호</div>
+        <p>
+          관리 계정은 조직의 가장 중요한 계정입니다. 이 계정이 침해되면 전체 조직이 위험해집니다.
+          관리 계정에서는 워크로드를 실행하지 마세요. 루트 사용자에 MFA를 반드시 설정하고,
+          관리 계정 접근 권한은 최소한의 인원에게만 부여하세요.
+          <strong>SCP는 관리 계정에 적용되지 않는다</strong>는 점도 기억하세요.
+        </p>
+      </div>
+
+      <h3>Organizations 기능 세트</h3>
+      <ul>
+        <li><strong>통합 결제 (Consolidated Billing):</strong> 모든 멤버 계정의 비용을 관리 계정에서 통합 결제</li>
+        <li><strong>모든 기능 (All Features):</strong> SCP, 태그 정책, AI 서비스 옵트아웃 정책 등 전체 관리 기능</li>
+      </ul>
+    </section>
+
+    <!-- 섹션 3: 추천 OU 구조 -->
+    <section class="content-section" id="recommended-ou-structure">
+      <h2>3. 추천 OU 구조</h2>
+
+      <p>
+        AWS는 엔터프라이즈 환경에서 검증된 OU 구조 패턴을 권장합니다.
+        조직의 규모와 요구사항에 따라 조정할 수 있지만, 기본 골격은 유사합니다.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">엔터프라이즈 추천 OU 구조</div>
+        <div class="diagram-row">
+          <div class="diagram-box iam">
+            <div class="box-title">Root</div>
+            <div class="box-sub">관리 계정 (Management)</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-arrow">&darr;</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box security">
+            <div class="box-title">Security OU</div>
+            <div class="box-sub">보안 전용</div>
+          </div>
+          <div class="diagram-box monitor">
+            <div class="box-title">Infrastructure OU</div>
+            <div class="box-sub">공유 인프라</div>
+          </div>
+          <div class="diagram-box compute">
+            <div class="box-title">Workloads OU</div>
+            <div class="box-sub">워크로드</div>
+          </div>
+          <div class="diagram-box storage">
+            <div class="box-title">Sandbox OU</div>
+            <div class="box-sub">실험/학습</div>
+          </div>
+        </div>
+      </div>
+
+      <h3>Security OU (보안 계정)</h3>
+      <p>보안 관련 서비스를 중앙에서 관리하는 계정들로 구성됩니다.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>계정</th>
+            <th>역할</th>
+            <th>주요 서비스</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Log Archive</strong></td>
+            <td>모든 계정의 로그를 중앙 집중 저장</td>
+            <td>CloudTrail Logs, Config Logs, VPC Flow Logs, S3 액세스 로그</td>
+          </tr>
+          <tr>
+            <td><strong>Security Tooling</strong></td>
+            <td>보안 도구 운영 및 모니터링</td>
+            <td>GuardDuty (위임 관리자), Security Hub, Detective, Inspector</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Infrastructure OU (인프라 계정)</h3>
+      <p>공유 인프라 서비스를 관리하는 계정들입니다.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>계정</th>
+            <th>역할</th>
+            <th>주요 서비스</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Network</strong></td>
+            <td>중앙 네트워크 관리 (허브 앤 스포크)</td>
+            <td>Transit Gateway, VPN, Direct Connect, Route 53</td>
+          </tr>
+          <tr>
+            <td><strong>Shared Services</strong></td>
+            <td>공통 서비스 제공</td>
+            <td>Active Directory, CI/CD 파이프라인, 공용 AMI</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Workloads OU (워크로드 계정)</h3>
+      <p>실제 서비스가 운영되는 계정들로, 환경별로 하위 OU를 구성합니다.</p>
+      <table>
+        <thead>
+          <tr>
+            <th>하위 OU / 계정</th>
+            <th>역할</th>
+            <th>SCP 적용</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Production OU</strong></td>
+            <td>프로덕션 환경 계정</td>
+            <td>가장 엄격한 SCP (리전 제한, 서비스 제한)</td>
+          </tr>
+          <tr>
+            <td><strong>Staging OU</strong></td>
+            <td>스테이징/QA 환경 계정</td>
+            <td>프로덕션과 유사한 SCP</td>
+          </tr>
+          <tr>
+            <td><strong>Development OU</strong></td>
+            <td>개발 환경 계정</td>
+            <td>상대적으로 유연한 SCP</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Sandbox OU (샌드박스 계정)</h3>
+      <p>
+        개발자가 자유롭게 실험할 수 있는 계정입니다.
+        비용 한도를 설정하고, 프로덕션 데이터 접근을 차단하되 최대한 자유도를 제공합니다.
+      </p>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">OU 구조 설계 원칙</div>
+        <p>
+          1) <strong>보안과 로그 계정은 분리:</strong> 공격자가 로그를 삭제하지 못하도록 별도 계정에서 관리<br>
+          2) <strong>환경별 분리:</strong> Production/Staging/Development를 별도 계정으로 분리<br>
+          3) <strong>네트워크 중앙화:</strong> Transit Gateway를 통한 허브 앤 스포크 네트워크 구조<br>
+          4) <strong>단순하게 시작:</strong> 처음부터 복잡한 구조를 만들지 말고, 필요에 따라 점진적으로 확장
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 4: SCP 개념 -->
+    <section class="content-section" id="scp-concept">
+      <h2>4. SCP (서비스 제어 정책) 개념</h2>
+
+      <p>
+        SCP(Service Control Policy)는 Organizations에서 OU 또는 개별 계정에 적용하는
+        <strong>권한의 상한선(최대 허용 범위)</strong>을 정의하는 정책입니다.
+        SCP는 권한을 직접 부여하지 않으며, IAM에서 부여한 권한 중에서
+        SCP가 허용하는 범위 내의 권한만 실제로 사용할 수 있습니다.
+      </p>
+
+      <h3>SCP와 IAM 정책의 관계</h3>
+
+      <div class="diagram">
+        <div class="diagram-title">최종 유효 권한 = SCP 허용 범위 AND IAM 부여 권한</div>
+        <div class="diagram-row">
+          <div class="diagram-box iam">
+            <div class="box-title">SCP</div>
+            <div class="box-sub">허용 가능한 최대 범위</div>
+          </div>
+          <div class="diagram-arrow">&cap;</div>
+          <div class="diagram-box security">
+            <div class="box-title">IAM 정책</div>
+            <div class="box-sub">실제 부여된 권한</div>
+          </div>
+          <div class="diagram-arrow">=</div>
+          <div class="diagram-box compute">
+            <div class="box-title">유효 권한</div>
+            <div class="box-sub">실제 사용 가능 권한</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 건물 출입카드와 사무실 열쇠</div>
+        <p>
+          SCP는 건물 출입카드와 같습니다. 출입카드로 들어갈 수 있는 층(허용 범위)이 정해져 있습니다.
+          IAM 정책은 각 사무실의 열쇠와 같습니다. 건물에 들어갈 수 있어도(SCP 허용)
+          열쇠(IAM)가 없으면 사무실에 들어갈 수 없습니다.
+          반대로, 열쇠가 있어도(IAM 허용) 건물 출입카드(SCP)가 해당 층을 허용하지 않으면 갈 수 없습니다.
+        </p>
+      </div>
+
+      <h3>SCP vs IAM 정책 비교</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>구분</th>
+            <th>SCP</th>
+            <th>IAM 정책</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>적용 대상</strong></td>
+            <td>OU 또는 계정 전체</td>
+            <td>사용자, 그룹, 역할</td>
+          </tr>
+          <tr>
+            <td><strong>역할</strong></td>
+            <td>허용 가능한 최대 범위 제한</td>
+            <td>실제 권한 부여</td>
+          </tr>
+          <tr>
+            <td><strong>상속</strong></td>
+            <td>상위 OU에서 하위 OU/계정으로 상속</td>
+            <td>상속 없음 (직접 연결)</td>
+          </tr>
+          <tr>
+            <td><strong>관리 계정 적용</strong></td>
+            <td>관리 계정에는 적용 안됨</td>
+            <td>모든 계정에 적용</td>
+          </tr>
+          <tr>
+            <td><strong>관리 주체</strong></td>
+            <td>조직 관리자 (중앙)</td>
+            <td>각 계정 관리자 (분산)</td>
+          </tr>
+          <tr>
+            <td><strong>기본값</strong></td>
+            <td>FullAWSAccess (모든 서비스 허용)</td>
+            <td>기본 거부 (명시적 허용 필요)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>SCP 상속 메커니즘</h3>
+      <p>
+        SCP는 상위 OU에서 하위 OU, 그리고 하위 계정으로 상속됩니다.
+        하위에서 상위 SCP보다 더 넓은 권한을 허용할 수 없습니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">text</span><button class="copy-btn">복사</button></div>
+        <pre><code>Root (SCP: ap-northeast-2 리전만 허용)
+├── Security OU (SCP: 상속됨)
+│   ├── Log Archive 계정    → ap-northeast-2만 사용 가능
+│   └── Security 계정       → ap-northeast-2만 사용 가능
+├── Workloads OU (SCP: EC2, RDS, S3만 허용)
+│   ├── Production 계정     → ap-northeast-2 + EC2, RDS, S3만 사용 가능
+│   └── Development 계정    → ap-northeast-2 + EC2, RDS, S3만 사용 가능
+└── Sandbox OU (SCP: $100/월 한도 알림)
+    └── Sandbox 계정        → ap-northeast-2만 사용 가능</code></pre>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">SCP 적용 시 주의사항</div>
+        <p>
+          1) SCP를 잘못 적용하면 전체 계정의 서비스가 중단될 수 있습니다. 항상 테스트 OU에서 먼저 검증하세요.<br>
+          2) SCP는 서비스 연결 역할(Service-Linked Role)에는 영향을 주지 않습니다.<br>
+          3) 관리 계정에는 SCP가 적용되지 않으므로, 관리 계정의 보안은 IAM으로 별도 관리해야 합니다.<br>
+          4) SCP 정책 크기 제한은 5,120자입니다. 복잡한 정책은 여러 SCP로 분리하세요.
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 5: 주요 SCP 예제 -->
+    <section class="content-section" id="scp-examples">
+      <h2>5. 주요 SCP 예제</h2>
+
+      <p>
+        실무에서 자주 사용되는 SCP 예제들을 살펴보겠습니다.
+        이 예제들을 조합하여 조직의 보안 요구사항에 맞는 정책을 구성할 수 있습니다.
+      </p>
+
+      <h3>예제 1: 허용 리전 제한</h3>
+      <p>
+        특정 리전에서만 리소스를 생성하도록 제한합니다.
+        데이터 거주지(Data Residency) 요구사항을 충족하는 데 필수적입니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyAllOutsideAllowedRegions",
+      "Effect": "Deny",
+      "NotAction": [
+        "iam:*",
+        "organizations:*",
+        "sts:*",
+        "support:*",
+        "billing:*",
+        "budgets:*",
+        "cloudfront:*",
+        "route53:*",
+        "wafv2:*",
+        "shield:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": [
+            "ap-northeast-2",
+            "us-east-1"
+          ]
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">글로벌 서비스 예외 처리</div>
+        <p>
+          IAM, Organizations, STS, CloudFront 등 글로벌 서비스는 리전에 종속되지 않으므로
+          <code>NotAction</code>으로 예외 처리해야 합니다. 이를 누락하면 IAM 역할 전환이나
+          CloudFront 배포 등이 차단될 수 있습니다.
+        </p>
+      </div>
+
+      <h3>예제 2: 특정 서비스 차단</h3>
+      <p>
+        비용이 높거나 보안 위험이 있는 서비스의 사용을 차단합니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyExpensiveServices",
+      "Effect": "Deny",
+      "Action": [
+        "redshift:*",
+        "emr:*",
+        "sagemaker:*",
+        "es:*",
+        "kafka:*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>예제 3: CloudTrail 삭제 방지</h3>
+      <p>
+        보안 감사의 핵심인 CloudTrail을 무단으로 중지하거나 삭제하는 것을 방지합니다.
+        공격자가 가장 먼저 시도하는 행위 중 하나가 로그 삭제입니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ProtectCloudTrail",
+      "Effect": "Deny",
+      "Action": [
+        "cloudtrail:StopLogging",
+        "cloudtrail:DeleteTrail",
+        "cloudtrail:UpdateTrail"
+      ],
+      "Resource": "*"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>예제 4: 루트 사용자 사용 제한</h3>
+      <p>
+        멤버 계정에서 루트 사용자의 사용을 최소화합니다.
+        루트 사용자는 SCP에 의해 대부분의 작업을 차단할 수 있습니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyRootUserActions",
+      "Effect": "Deny",
+      "Action": "*",
+      "Resource": "*",
+      "Condition": {
+        "StringLike": {
+          "aws:PrincipalArn": "arn:aws:iam::*:root"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>예제 5: S3 퍼블릭 접근 방지</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyS3PublicAccess",
+      "Effect": "Deny",
+      "Action": [
+        "s3:PutBucketPublicAccessBlock",
+        "s3:PutAccountPublicAccessBlock"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "s3:PublicAccessBlockConfiguration/BlockPublicAcls": "true",
+          "s3:PublicAccessBlockConfiguration/BlockPublicPolicy": "true",
+          "s3:PublicAccessBlockConfiguration/IgnorePublicAcls": "true",
+          "s3:PublicAccessBlockConfiguration/RestrictPublicBuckets": "true"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>예제 6: GuardDuty 비활성화 방지</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ProtectGuardDuty",
+      "Effect": "Deny",
+      "Action": [
+        "guardduty:DeleteDetector",
+        "guardduty:DisassociateFromMasterAccount",
+        "guardduty:UpdateDetector"
+      ],
+      "Resource": "*"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">SCP 설계 전략: 허용 목록 vs 거부 목록</div>
+        <p>
+          <strong>거부 목록(Deny List) 방식:</strong> 기본 FullAWSAccess를 유지하고, 특정 위험 작업만 거부.
+          관리가 쉽지만 새로운 서비스가 추가될 때 누락 가능.<br>
+          <strong>허용 목록(Allow List) 방식:</strong> FullAWSAccess를 제거하고 필요한 서비스만 명시적 허용.
+          더 안전하지만 관리 복잡도가 높음.<br><br>
+          대부분의 조직은 <strong>거부 목록 방식으로 시작</strong>하여 점진적으로 강화하는 것을 권장합니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 6: 가드레일 개념 -->
+    <section class="content-section" id="guardrails">
+      <h2>6. 가드레일 개념</h2>
+
+      <p>
+        가드레일(Guardrail)은 조직의 계정이 보안 및 컴플라이언스 기준을 준수하도록
+        보장하는 규칙입니다. 고속도로의 가드레일처럼, 계정이 안전한 범위를 벗어나지 못하도록 합니다.
+      </p>
+
+      <h3>예방적 가드레일 (Preventive Guardrails)</h3>
+      <p>
+        규정을 위반하는 작업 자체를 <strong>사전에 차단</strong>합니다. SCP를 통해 구현됩니다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>가드레일</th>
+            <th>구현 방식</th>
+            <th>예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>리전 제한</td>
+            <td>SCP</td>
+            <td>서울 리전 외 리소스 생성 차단</td>
+          </tr>
+          <tr>
+            <td>CloudTrail 보호</td>
+            <td>SCP</td>
+            <td>CloudTrail 중지/삭제 차단</td>
+          </tr>
+          <tr>
+            <td>루트 사용자 제한</td>
+            <td>SCP</td>
+            <td>루트 사용자 API 호출 차단</td>
+          </tr>
+          <tr>
+            <td>암호화 강제</td>
+            <td>SCP</td>
+            <td>암호화 없는 S3 업로드 차단</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>탐지적 가드레일 (Detective Guardrails)</h3>
+      <p>
+        규정 위반 상태를 <strong>탐지하고 알림</strong>합니다. AWS Config 규칙을 통해 구현됩니다.
+        예방적 가드레일과 달리, 이미 발생한 위반을 감지합니다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>가드레일</th>
+            <th>구현 방식</th>
+            <th>예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>MFA 미설정 탐지</td>
+            <td>Config Rule</td>
+            <td>IAM 사용자의 MFA 미설정 탐지</td>
+          </tr>
+          <tr>
+            <td>퍼블릭 S3 탐지</td>
+            <td>Config Rule</td>
+            <td>퍼블릭 액세스가 열린 S3 버킷 탐지</td>
+          </tr>
+          <tr>
+            <td>미암호화 EBS 탐지</td>
+            <td>Config Rule</td>
+            <td>암호화되지 않은 EBS 볼륨 탐지</td>
+          </tr>
+          <tr>
+            <td>SSH 개방 탐지</td>
+            <td>Config Rule</td>
+            <td>0.0.0.0/0으로 SSH가 열린 보안그룹 탐지</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">예방적 + 탐지적 = 심층 방어</div>
+        <p>
+          가장 효과적인 보안은 두 유형의 가드레일을 함께 사용하는 것입니다.
+          예방적 가드레일로 대부분의 위반을 차단하고, 탐지적 가드레일로 예방을 우회하거나
+          기존에 존재하던 위반 사항을 발견합니다. 이는 "심층 방어(Defense in Depth)" 원칙의 실천입니다.
+        </p>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">가드레일 도입 순서</div>
+        <p>
+          1단계: 필수 예방적 가드레일 (CloudTrail 보호, 리전 제한)<br>
+          2단계: 필수 탐지적 가드레일 (MFA, 암호화 확인)<br>
+          3단계: 강력한 예방적 가드레일 (루트 사용자 차단, 서비스 제한)<br>
+          4단계: 고급 탐지적 가드레일 (커스텀 Config 규칙)
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 7: AWS Control Tower -->
+    <section class="content-section" id="control-tower">
+      <h2>7. AWS Control Tower 소개</h2>
+
+      <p>
+        AWS Control Tower는 모범 사례에 기반한 <strong>멀티 계정 환경을 자동으로 구성</strong>해주는 서비스입니다.
+        Organizations, SSO, Config, CloudTrail 등을 자동으로 설정하여,
+        안전한 멀티 계정 환경("랜딩 존")을 빠르게 구축할 수 있습니다.
+      </p>
+
+      <h3>Control Tower가 자동으로 구성하는 것들</h3>
+
+      <div class="diagram">
+        <div class="diagram-title">Control Tower 랜딩 존 자동 구성</div>
+        <div class="diagram-row">
+          <div class="diagram-box iam">
+            <div class="box-title">AWS Organizations</div>
+            <div class="box-sub">조직 및 OU 자동 생성</div>
+          </div>
+          <div class="diagram-box security">
+            <div class="box-title">가드레일</div>
+            <div class="box-sub">필수 SCP + Config 규칙</div>
+          </div>
+          <div class="diagram-box detective">
+            <div class="box-title">로그 아카이브</div>
+            <div class="box-sub">중앙 로그 계정 자동 구성</div>
+          </div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box monitor">
+            <div class="box-title">감사 계정</div>
+            <div class="box-sub">보안 감사용 계정</div>
+          </div>
+          <div class="diagram-box iam">
+            <div class="box-title">IAM Identity Center</div>
+            <div class="box-sub">SSO 자동 구성</div>
+          </div>
+          <div class="diagram-box compute">
+            <div class="box-title">Account Factory</div>
+            <div class="box-sub">표준화된 계정 생성</div>
+          </div>
+        </div>
+      </div>
+
+      <h3>Control Tower 핵심 기능</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>기능</th>
+            <th>설명</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>랜딩 존 (Landing Zone)</strong></td>
+            <td>모범 사례 기반의 멀티 계정 환경을 자동 구성. Security OU(로그 + 감사 계정)와 Sandbox OU를 기본 생성</td>
+          </tr>
+          <tr>
+            <td><strong>Account Factory</strong></td>
+            <td>표준화된 계정을 셀프 서비스로 생성. VPC 설정, IAM 설정 등이 자동 적용</td>
+          </tr>
+          <tr>
+            <td><strong>가드레일 라이브러리</strong></td>
+            <td>400개 이상의 사전 정의된 가드레일(예방적/탐지적)을 OU 단위로 활성화</td>
+          </tr>
+          <tr>
+            <td><strong>대시보드</strong></td>
+            <td>전체 조직의 컴플라이언스 상태를 한눈에 확인. 비준수 계정 및 가드레일 위반 현황 표시</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">Control Tower vs 직접 구성</div>
+        <p>
+          <strong>Control Tower 사용 권장:</strong> 새로 시작하는 조직, AWS 운영 경험이 적은 팀,
+          빠르게 모범 사례를 적용하고 싶은 경우<br>
+          <strong>직접 구성 권장:</strong> 이미 Organizations를 사용 중인 조직, 고도로 커스터마이즈된
+          요구사항이 있는 경우, Control Tower가 지원하지 않는 리전을 사용하는 경우
+        </p>
+      </div>
+    </section>
+
+    <!-- 실습: SCP 정책 작성 & 시뮬레이션 -->
+    <section class="content-section" id="lab-scp-simulation">
+      <h2>8. 실습: SCP 정책 작성 & 시뮬레이션</h2>
+
+      <div class="lab-section">
+        <div class="lab-title">실습: SCP 정책 작성 및 적용 시뮬레이션</div>
+
+        <div class="info-box concept">
+          <div class="info-box-title">실습 목표</div>
+          <p>
+            ShopEasy 프로덕션 환경을 위한 SCP를 설계하고 작성합니다.
+            실제 Organizations가 없어도 SCP 정책 문법을 학습하고,
+            IAM Policy Simulator를 활용하여 정책 효과를 검증합니다.
+          </p>
+        </div>
+
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">Step 1: ShopEasy 프로덕션 SCP 요구사항 정의</div>
+            <p>ShopEasy 프로덕션 계정에 적용할 SCP 요구사항을 정리합니다.</p>
+            <table>
+              <thead>
+                <tr>
+                  <th>요구사항</th>
+                  <th>이유</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>서울 리전(ap-northeast-2)만 허용</td>
+                  <td>데이터 거주지 요건, 불필요한 리소스 생성 방지</td>
+                </tr>
+                <tr>
+                  <td>CloudTrail 변경 금지</td>
+                  <td>감사 로그 무결성 보장</td>
+                </tr>
+                <tr>
+                  <td>GuardDuty 변경 금지</td>
+                  <td>보안 탐지 체계 보호</td>
+                </tr>
+                <tr>
+                  <td>루트 사용자 사용 금지</td>
+                  <td>특권 계정 오남용 방지</td>
+                </tr>
+                <tr>
+                  <td>고비용 서비스 차단</td>
+                  <td>불필요한 비용 발생 방지</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 2: 통합 SCP 정책 작성</div>
+            <p>요구사항을 반영한 통합 SCP를 작성합니다.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+              <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyOutsideSeoulRegion",
+      "Effect": "Deny",
+      "NotAction": [
+        "iam:*",
+        "organizations:*",
+        "sts:*",
+        "support:*",
+        "cloudfront:*",
+        "route53:*",
+        "wafv2:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "ProtectSecurityServices",
+      "Effect": "Deny",
+      "Action": [
+        "cloudtrail:StopLogging",
+        "cloudtrail:DeleteTrail",
+        "cloudtrail:UpdateTrail",
+        "guardduty:DeleteDetector",
+        "guardduty:UpdateDetector",
+        "config:StopConfigurationRecorder",
+        "config:DeleteConfigurationRecorder"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyRootUser",
+      "Effect": "Deny",
+      "Action": "*",
+      "Resource": "*",
+      "Condition": {
+        "StringLike": {
+          "aws:PrincipalArn": "arn:aws:iam::*:root"
+        }
+      }
+    },
+    {
+      "Sid": "DenyExpensiveServices",
+      "Effect": "Deny",
+      "Action": [
+        "redshift:*",
+        "emr:*",
+        "sagemaker:*",
+        "kafka:*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 3: IAM Policy Simulator로 검증</div>
+            <p>
+              IAM Policy Simulator를 활용하여 SCP와 유사한 효과를 테스트합니다.
+              (IAM Policy Simulator는 SCP를 직접 테스트하지 못하지만,
+              동일한 정책을 Permission Boundary로 적용하면 유사한 효과를 확인할 수 있습니다.)
+            </p>
+            <ul>
+              <li>AWS 콘솔 > IAM > Policy Simulator로 이동</li>
+              <li>테스트할 사용자/역할을 선택</li>
+              <li>서울 리전 외의 EC2 작업을 시도하여 거부되는지 확인</li>
+              <li>CloudTrail StopLogging 작업이 거부되는지 확인</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 4: SCP 적용 (Organizations가 있는 경우)</div>
+            <p>실제 Organizations 환경이 있다면, 테스트 OU에 먼저 적용합니다.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># SCP 정책 생성
+aws organizations create-policy \
+  --name "shopeasy-production-scp" \
+  --description "ShopEasy 프로덕션 계정용 SCP" \
+  --type SERVICE_CONTROL_POLICY \
+  --content file://shopeasy-production-scp.json
+
+# 테스트 OU에 먼저 연결
+aws organizations attach-policy \
+  --policy-id p-xxxxxxxxxx \
+  --target-id ou-xxxx-xxxxxxxx
+
+# 정상 동작 확인 후 프로덕션 OU에 연결
+# (테스트 완료 전까지 프로덕션에 적용 금지!)</code></pre>
+            </div>
+            <div class="info-box danger">
+              <div class="info-box-title">프로덕션 적용 전 필수 체크</div>
+              <p>
+                1) 반드시 테스트 계정에서 먼저 검증하세요.<br>
+                2) 필요한 서비스가 차단되지 않는지 확인하세요.<br>
+                3) 롤백 계획을 수립하세요 (SCP 분리 절차).<br>
+                4) 관리 계정에서 SCP를 즉시 분리할 수 있는 담당자를 확보하세요.
+              </p>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Step 5: 결과 분석 및 토론</div>
+            <p>작성한 SCP에 대해 다음 사항을 분석합니다.</p>
+            <ul>
+              <li>각 Statement가 ShopEasy의 어떤 보안 위험을 방지하는가?</li>
+              <li>ShopEasy 운영에 필요한 서비스가 차단되지는 않는가?</li>
+              <li>추가로 필요한 SCP 규칙은 무엇인가?</li>
+              <li>Development 계정에는 어떤 SCP를 다르게 적용해야 하는가?</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="chapter-nav">
+      <a href="20-incident-response.html" class="prev">이전: 보안 사고 대응 자동화</a>
+      <a href="22-security-architecture-patterns.html" class="next">다음: 보안 아키텍처 설계 패턴</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/21-organizations-scp.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>

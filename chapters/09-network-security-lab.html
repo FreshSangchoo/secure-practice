@@ -1,0 +1,1378 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/09-network-security-lab.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>이커머스 네트워크 보안 적용 실습 - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li><a href="#flow-logs-setup">VPC Flow Logs 설정</a></li>
+      <li><a href="#nacl-management">NACL로 관리 포트 제한</a></li>
+      <li><a href="#waf-alb-integration">WAF를 ALB에 연동</a></li>
+      <li><a href="#session-manager">Session Manager 전환</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 09</span>
+      <h1>이커머스 네트워크 보안 적용 실습</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>ShopEasy VPC에 Flow Logs를 설정하여 네트워크 트래픽을 모니터링할 수 있다</li>
+          <li>NACL 규칙을 활용하여 관리 포트 접근을 제한할 수 있다</li>
+          <li>AWS WAF를 ALB에 연동하여 웹 애플리케이션 공격을 방어할 수 있다</li>
+          <li>Bastion Host를 Session Manager로 전환하여 보안을 강화할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ======================================== -->
+    <!-- 섹션 1: VPC Flow Logs 설정 -->
+    <!-- ======================================== -->
+    <section class="content-section" id="flow-logs-setup">
+      <h2>1. ShopEasy VPC에 Flow Logs 설정</h2>
+
+      <p>
+        VPC Flow Logs는 VPC 내의 네트워크 인터페이스에서 송수신되는 IP 트래픽에 대한 정보를 캡처하는 기능입니다.
+        ShopEasy 이커머스 서비스에서는 보안 사고 탐지, 트래픽 패턴 분석, 규정 준수 감사 등을 위해 Flow Logs를 반드시 설정해야 합니다.
+      </p>
+
+      <h3>Flow Logs를 설정해야 하는 이유</h3>
+      <ul>
+        <li><strong>보안 모니터링</strong>: 의심스러운 트래픽 패턴(포트 스캐닝, 비정상적인 외부 접근 등)을 탐지할 수 있습니다</li>
+        <li><strong>문제 진단</strong>: 네트워크 연결 문제의 원인(보안그룹/NACL 차단 등)을 파악할 수 있습니다</li>
+        <li><strong>규정 준수</strong>: PCI-DSS, ISMS 등 보안 인증에서 네트워크 로깅은 필수 요건입니다</li>
+        <li><strong>비용 최적화</strong>: 불필요한 트래픽 패턴을 식별하여 비용을 절감할 수 있습니다</li>
+      </ul>
+
+      <div class="info-box concept">
+        <div class="info-box-title">Flow Logs 캡처 레벨</div>
+        <p>
+          VPC Flow Logs는 세 가지 레벨에서 캡처할 수 있습니다:<br>
+          <strong>VPC 레벨</strong> - VPC 내 모든 ENI의 트래픽 캡처 (가장 포괄적)<br>
+          <strong>서브넷 레벨</strong> - 특정 서브넷 내 모든 ENI의 트래픽 캡처<br>
+          <strong>ENI 레벨</strong> - 특정 네트워크 인터페이스의 트래픽만 캡처 (가장 세밀)
+        </p>
+      </div>
+
+      <h3>Flow Log 레코드 구조</h3>
+      <p>Flow Log의 기본 레코드는 다음과 같은 필드로 구성됩니다:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>필드</th>
+            <th>설명</th>
+            <th>예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>version</code></td>
+            <td>Flow Log 버전</td>
+            <td>2</td>
+          </tr>
+          <tr>
+            <td><code>account-id</code></td>
+            <td>AWS 계정 ID</td>
+            <td>123456789012</td>
+          </tr>
+          <tr>
+            <td><code>interface-id</code></td>
+            <td>ENI ID</td>
+            <td>eni-0abc123def456</td>
+          </tr>
+          <tr>
+            <td><code>srcaddr</code></td>
+            <td>소스 IP 주소</td>
+            <td>10.0.1.50</td>
+          </tr>
+          <tr>
+            <td><code>dstaddr</code></td>
+            <td>대상 IP 주소</td>
+            <td>10.0.2.100</td>
+          </tr>
+          <tr>
+            <td><code>srcport</code></td>
+            <td>소스 포트</td>
+            <td>49152</td>
+          </tr>
+          <tr>
+            <td><code>dstport</code></td>
+            <td>대상 포트</td>
+            <td>443</td>
+          </tr>
+          <tr>
+            <td><code>protocol</code></td>
+            <td>프로토콜 번호 (6=TCP, 17=UDP)</td>
+            <td>6</td>
+          </tr>
+          <tr>
+            <td><code>packets</code></td>
+            <td>전송된 패킷 수</td>
+            <td>10</td>
+          </tr>
+          <tr>
+            <td><code>bytes</code></td>
+            <td>전송된 바이트 수</td>
+            <td>840</td>
+          </tr>
+          <tr>
+            <td><code>start</code></td>
+            <td>캡처 시작 시간 (Unix 타임스탬프)</td>
+            <td>1620140761</td>
+          </tr>
+          <tr>
+            <td><code>end</code></td>
+            <td>캡처 종료 시간</td>
+            <td>1620140821</td>
+          </tr>
+          <tr>
+            <td><code>action</code></td>
+            <td>ACCEPT 또는 REJECT</td>
+            <td>ACCEPT</td>
+          </tr>
+          <tr>
+            <td><code>log-status</code></td>
+            <td>로깅 상태</td>
+            <td>OK</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Flow Logs 전송 대상 비교</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>전송 대상</th>
+            <th>장점</th>
+            <th>단점</th>
+            <th>비용</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>CloudWatch Logs</strong></td>
+            <td>실시간 모니터링, 메트릭 필터, 알림 설정 용이</td>
+            <td>대용량 시 비용 증가</td>
+            <td>높음</td>
+          </tr>
+          <tr>
+            <td><strong>S3</strong></td>
+            <td>대용량 저장 저렴, Athena로 쿼리 가능</td>
+            <td>실시간 분석 어려움</td>
+            <td>낮음</td>
+          </tr>
+          <tr>
+            <td><strong>Kinesis Data Firehose</strong></td>
+            <td>실시간 스트리밍, 다양한 대상으로 전달</td>
+            <td>설정 복잡</td>
+            <td>중간</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box tip">
+        <div class="info-box-title">ShopEasy 추천 설정</div>
+        <p>
+          개발/테스트 환경에서는 <strong>CloudWatch Logs</strong>로 전송하여 실시간 모니터링을 하고,
+          운영 환경에서는 <strong>S3 + CloudWatch Logs 병행</strong>으로 설정하는 것을 권장합니다.
+          S3에 저장된 로그는 Athena로 대규모 분석이 가능하며, CloudWatch Logs로 실시간 알림을 받을 수 있습니다.
+        </p>
+      </div>
+
+      <h3>IAM 역할 생성 (Flow Logs -> CloudWatch)</h3>
+      <p>VPC Flow Logs가 CloudWatch Logs에 로그를 전송하려면 적절한 IAM 역할이 필요합니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowFlowLogsToCloudWatch",
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams"
+      ],
+      "Resource": "arn:aws:logs:ap-northeast-2:123456789012:log-group:shopeasy-vpc-flow-logs:*"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <p>Trust Policy (신뢰 정책):</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowFlowLogsAssumeRole",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "vpc-flow-logs.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <!-- Lab: VPC Flow Logs 설정 -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: ShopEasy VPC Flow Logs 설정</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">IAM 역할 생성</div>
+            <p>AWS 콘솔 > IAM > 역할 > 역할 만들기를 클릭합니다.</p>
+            <p><strong>신뢰할 수 있는 엔터티 유형</strong>: 사용자 지정 신뢰 정책을 선택합니다.</p>
+            <p>위의 Trust Policy JSON을 붙여넣고, 다음 단계에서 위의 권한 정책을 인라인 정책으로 추가합니다.</p>
+            <p>역할 이름: <code>ShopEasy-VPC-FlowLogs-Role</code></p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">CloudWatch 로그 그룹 생성</div>
+            <p>AWS 콘솔 > CloudWatch > 로그 그룹 > 로그 그룹 생성을 클릭합니다.</p>
+            <p>로그 그룹 이름: <code>/shopeasy/vpc-flow-logs</code></p>
+            <p>보존 기간: <strong>30일</strong> (비용 최적화를 위해 적절한 보존 기간 설정)</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">VPC Flow Logs 활성화</div>
+            <p>AWS 콘솔 > VPC > 해당 VPC 선택 > Flow Logs 탭 > Flow Log 생성을 클릭합니다.</p>
+            <p>설정 값:</p>
+            <ul>
+              <li><strong>필터</strong>: 전체 (ACCEPT + REJECT 모두 캡처)</li>
+              <li><strong>최대 집계 간격</strong>: 1분 (보안 모니터링 목적으로 최소 간격 선택)</li>
+              <li><strong>대상</strong>: CloudWatch Logs로 전송</li>
+              <li><strong>대상 로그 그룹</strong>: <code>/shopeasy/vpc-flow-logs</code></li>
+              <li><strong>IAM 역할</strong>: <code>ShopEasy-VPC-FlowLogs-Role</code></li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">AWS CLI로 Flow Log 생성 (대안)</div>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># VPC ID 확인
+aws ec2 describe-vpcs \
+  --filters "Name=tag:Name,Values=ShopEasy-VPC" \
+  --query "Vpcs[0].VpcId" --output text
+
+# Flow Log 생성
+aws ec2 create-flow-logs \
+  --resource-type VPC \
+  --resource-ids vpc-0abc123def456 \
+  --traffic-type ALL \
+  --log-destination-type cloud-watch-logs \
+  --log-group-name /shopeasy/vpc-flow-logs \
+  --deliver-logs-permission-arn arn:aws:iam::123456789012:role/ShopEasy-VPC-FlowLogs-Role \
+  --max-aggregation-interval 60</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">로그 확인 및 분석</div>
+            <p>Flow Log가 활성화된 후 약 10~15분 후부터 로그가 나타납니다.</p>
+            <p>CloudWatch Logs Insights에서 다음 쿼리로 거부된 트래픽을 분석합니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">sql</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># REJECT된 트래픽 중 상위 소스 IP 조회
+fields @timestamp, srcAddr, dstAddr, dstPort, action
+| filter action = "REJECT"
+| stats count(*) as rejectCount by srcAddr
+| sort rejectCount desc
+| limit 20</code></pre>
+            </div>
+            <p>SSH 포트(22)로의 접근 시도 분석:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">sql</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># SSH 포트 접근 시도 조회
+fields @timestamp, srcAddr, dstAddr, dstPort, action
+| filter dstPort = 22
+| stats count(*) as attempts by srcAddr, action
+| sort attempts desc
+| limit 20</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">비용 주의</div>
+        <p>
+          VPC Flow Logs는 캡처된 데이터량에 따라 비용이 발생합니다.
+          CloudWatch Logs 수집 비용은 GB당 약 $0.50이며, 저장 비용은 GB/월당 약 $0.03입니다.
+          트래픽이 많은 운영 환경에서는 S3로 전송하여 비용을 절감하는 것을 권장합니다.
+          보존 기간도 적절히 설정하여 불필요한 비용을 방지하세요.
+        </p>
+      </div>
+
+      <h3>ShopEasy 아키텍처에서의 Flow Logs 활용</h3>
+
+      <div class="diagram">
+        <div class="diagram-title">ShopEasy VPC Flow Logs 아키텍처</div>
+        <div class="diagram-row">
+          <div class="diagram-box network">
+            <div class="box-title">ShopEasy VPC</div>
+            <div class="box-sub">Flow Logs 활성화</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box monitor">
+            <div class="box-title">CloudWatch Logs</div>
+            <div class="box-sub">/shopeasy/vpc-flow-logs</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box detective">
+            <div class="box-title">CloudWatch 알림</div>
+            <div class="box-sub">메트릭 필터 + SNS</div>
+          </div>
+        </div>
+        <div class="diagram-row" style="margin-top:1rem;">
+          <div class="diagram-box network">
+            <div class="box-title">ShopEasy VPC</div>
+            <div class="box-sub">Flow Logs 활성화</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box storage">
+            <div class="box-title">S3 버킷</div>
+            <div class="box-sub">장기 보관 (90일)</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box database">
+            <div class="box-title">Athena</div>
+            <div class="box-sub">대규모 쿼리 분석</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================== -->
+    <!-- 섹션 2: NACL로 관리 포트 제한 -->
+    <!-- ======================================== -->
+    <section class="content-section" id="nacl-management">
+      <h2>2. NACL로 관리 포트 제한</h2>
+
+      <p>
+        Network ACL(NACL)은 서브넷 레벨에서 작동하는 방화벽으로, 보안그룹과 함께 방어 계층을 구성합니다.
+        ShopEasy 서비스에서는 NACL을 활용하여 관리 포트(SSH 22번, RDP 3389번 등)에 대한 접근을 서브넷 레벨에서 엄격하게 제한해야 합니다.
+      </p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 보안그룹 vs NACL</div>
+        <p>
+          <strong>보안그룹</strong>은 아파트 각 세대의 도어락과 같습니다 - 인스턴스(세대) 단위로 접근을 제어합니다.<br>
+          <strong>NACL</strong>은 아파트 단지 정문의 경비실과 같습니다 - 서브넷(단지) 전체에 대한 출입을 제어합니다.<br>
+          두 계층 모두 적용하면 "심층 방어(Defense in Depth)" 원칙을 실현할 수 있습니다.
+        </p>
+      </div>
+
+      <h3>보안그룹 vs NACL 비교</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>구분</th>
+            <th>보안그룹 (Security Group)</th>
+            <th>NACL</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>적용 레벨</strong></td>
+            <td>인스턴스(ENI) 레벨</td>
+            <td>서브넷 레벨</td>
+          </tr>
+          <tr>
+            <td><strong>상태</strong></td>
+            <td>Stateful (응답 자동 허용)</td>
+            <td>Stateless (인바운드/아웃바운드 별도 설정)</td>
+          </tr>
+          <tr>
+            <td><strong>규칙 유형</strong></td>
+            <td>허용 규칙만</td>
+            <td>허용 + 거부 규칙</td>
+          </tr>
+          <tr>
+            <td><strong>규칙 평가</strong></td>
+            <td>모든 규칙 평가</td>
+            <td>번호 순서대로 평가 (낮은 번호 우선)</td>
+          </tr>
+          <tr>
+            <td><strong>기본 동작</strong></td>
+            <td>모든 인바운드 거부</td>
+            <td>기본 NACL은 모든 트래픽 허용</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>ShopEasy NACL 설계 원칙</h3>
+      <ul>
+        <li><strong>퍼블릭 서브넷</strong>: HTTP(80), HTTPS(443)만 전체 허용, 관리 포트는 특정 IP만 허용</li>
+        <li><strong>프라이빗 서브넷(앱)</strong>: 퍼블릭 서브넷에서의 트래픽만 허용, 외부 직접 접근 차단</li>
+        <li><strong>프라이빗 서브넷(DB)</strong>: 앱 서브넷에서의 DB 포트만 허용, 그 외 모든 인바운드 차단</li>
+      </ul>
+
+      <h3>퍼블릭 서브넷 NACL 규칙 예시</h3>
+
+      <h4>인바운드 규칙</h4>
+      <table>
+        <thead>
+          <tr>
+            <th>규칙 번호</th>
+            <th>유형</th>
+            <th>프로토콜</th>
+            <th>포트 범위</th>
+            <th>소스</th>
+            <th>허용/거부</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>100</td>
+            <td>HTTP</td>
+            <td>TCP</td>
+            <td>80</td>
+            <td>0.0.0.0/0</td>
+            <td>ALLOW</td>
+          </tr>
+          <tr>
+            <td>110</td>
+            <td>HTTPS</td>
+            <td>TCP</td>
+            <td>443</td>
+            <td>0.0.0.0/0</td>
+            <td>ALLOW</td>
+          </tr>
+          <tr>
+            <td>120</td>
+            <td>SSH</td>
+            <td>TCP</td>
+            <td>22</td>
+            <td>203.0.113.50/32</td>
+            <td>ALLOW</td>
+          </tr>
+          <tr>
+            <td>130</td>
+            <td>임시 포트</td>
+            <td>TCP</td>
+            <td>1024-65535</td>
+            <td>0.0.0.0/0</td>
+            <td>ALLOW</td>
+          </tr>
+          <tr style="background:#FCE4EC;">
+            <td>200</td>
+            <td>SSH</td>
+            <td>TCP</td>
+            <td>22</td>
+            <td>0.0.0.0/0</td>
+            <td><strong>DENY</strong></td>
+          </tr>
+          <tr>
+            <td>*</td>
+            <td>모든 트래픽</td>
+            <td>ALL</td>
+            <td>ALL</td>
+            <td>0.0.0.0/0</td>
+            <td>DENY</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box warning">
+        <div class="info-box-title">임시 포트(Ephemeral Ports) 주의</div>
+        <p>
+          NACL은 Stateless이기 때문에, 아웃바운드 응답 트래픽을 위한 임시 포트(1024-65535)를 반드시 허용해야 합니다.
+          이 규칙이 없으면 웹 서비스 응답이 클라이언트에게 전달되지 않습니다.
+          Linux 서버는 32768-65535, Windows는 49152-65535를 사용하지만, 안전하게 1024-65535 전체를 열어주는 것이 일반적입니다.
+        </p>
+      </div>
+
+      <h4>아웃바운드 규칙</h4>
+      <table>
+        <thead>
+          <tr>
+            <th>규칙 번호</th>
+            <th>유형</th>
+            <th>프로토콜</th>
+            <th>포트 범위</th>
+            <th>대상</th>
+            <th>허용/거부</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>100</td>
+            <td>HTTP</td>
+            <td>TCP</td>
+            <td>80</td>
+            <td>0.0.0.0/0</td>
+            <td>ALLOW</td>
+          </tr>
+          <tr>
+            <td>110</td>
+            <td>HTTPS</td>
+            <td>TCP</td>
+            <td>443</td>
+            <td>0.0.0.0/0</td>
+            <td>ALLOW</td>
+          </tr>
+          <tr>
+            <td>120</td>
+            <td>임시 포트</td>
+            <td>TCP</td>
+            <td>1024-65535</td>
+            <td>0.0.0.0/0</td>
+            <td>ALLOW</td>
+          </tr>
+          <tr>
+            <td>*</td>
+            <td>모든 트래픽</td>
+            <td>ALL</td>
+            <td>ALL</td>
+            <td>0.0.0.0/0</td>
+            <td>DENY</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <!-- Lab: NACL 규칙 추가 -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: ShopEasy 퍼블릭 서브넷 NACL 설정</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">커스텀 NACL 생성</div>
+            <p>AWS 콘솔 > VPC > 네트워크 ACL > 네트워크 ACL 생성을 클릭합니다.</p>
+            <ul>
+              <li>이름: <code>ShopEasy-Public-NACL</code></li>
+              <li>VPC: ShopEasy VPC 선택</li>
+            </ul>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># CLI로 NACL 생성
+aws ec2 create-network-acl \
+  --vpc-id vpc-0abc123def456 \
+  --tag-specifications 'ResourceType=network-acl,Tags=[{Key=Name,Value=ShopEasy-Public-NACL}]'</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">인바운드 규칙 추가 - SSH 특정 IP만 허용</div>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># HTTP 허용 (규칙 100)
+aws ec2 create-network-acl-entry \
+  --network-acl-id acl-0abc123 \
+  --ingress --rule-number 100 \
+  --protocol tcp --port-range From=80,To=80 \
+  --cidr-block 0.0.0.0/0 --rule-action allow
+
+# HTTPS 허용 (규칙 110)
+aws ec2 create-network-acl-entry \
+  --network-acl-id acl-0abc123 \
+  --ingress --rule-number 110 \
+  --protocol tcp --port-range From=443,To=443 \
+  --cidr-block 0.0.0.0/0 --rule-action allow
+
+# SSH - 관리자 IP만 허용 (규칙 120)
+aws ec2 create-network-acl-entry \
+  --network-acl-id acl-0abc123 \
+  --ingress --rule-number 120 \
+  --protocol tcp --port-range From=22,To=22 \
+  --cidr-block 203.0.113.50/32 --rule-action allow
+
+# 임시 포트 허용 (규칙 130)
+aws ec2 create-network-acl-entry \
+  --network-acl-id acl-0abc123 \
+  --ingress --rule-number 130 \
+  --protocol tcp --port-range From=1024,To=65535 \
+  --cidr-block 0.0.0.0/0 --rule-action allow
+
+# SSH - 그 외 모든 IP 거부 (규칙 200)
+aws ec2 create-network-acl-entry \
+  --network-acl-id acl-0abc123 \
+  --ingress --rule-number 200 \
+  --protocol tcp --port-range From=22,To=22 \
+  --cidr-block 0.0.0.0/0 --rule-action deny</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">아웃바운드 규칙 추가</div>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># HTTP 아웃바운드 (규칙 100)
+aws ec2 create-network-acl-entry \
+  --network-acl-id acl-0abc123 \
+  --egress --rule-number 100 \
+  --protocol tcp --port-range From=80,To=80 \
+  --cidr-block 0.0.0.0/0 --rule-action allow
+
+# HTTPS 아웃바운드 (규칙 110)
+aws ec2 create-network-acl-entry \
+  --network-acl-id acl-0abc123 \
+  --egress --rule-number 110 \
+  --protocol tcp --port-range From=443,To=443 \
+  --cidr-block 0.0.0.0/0 --rule-action allow
+
+# 임시 포트 아웃바운드 (규칙 120)
+aws ec2 create-network-acl-entry \
+  --network-acl-id acl-0abc123 \
+  --egress --rule-number 120 \
+  --protocol tcp --port-range From=1024,To=65535 \
+  --cidr-block 0.0.0.0/0 --rule-action allow</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">NACL을 퍼블릭 서브넷에 연결</div>
+            <p>생성한 NACL을 ShopEasy의 퍼블릭 서브넷에 연결합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># NACL을 서브넷에 연결
+aws ec2 replace-network-acl-association \
+  --association-id aclassoc-0abc123 \
+  --network-acl-id acl-0abc123</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">규칙 검증 테스트</div>
+            <p>다른 IP에서 SSH 접속을 시도하여 차단되는지 확인합니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 허용된 IP에서 테스트 (성공해야 함)
+ssh -i shopeasy-key.pem ec2-user@ec2-public-ip
+
+# 다른 IP에서 테스트 (타임아웃되어야 함)
+# NACL DENY에 의해 패킷이 드롭됨
+
+# Flow Logs에서 REJECT 확인
+# CloudWatch Logs Insights에서:
+fields @timestamp, srcAddr, dstPort, action
+| filter dstPort = 22 and action = "REJECT"
+| sort @timestamp desc
+| limit 10</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">NACL 모범 사례</div>
+        <p>
+          1. 규칙 번호를 10 또는 100 단위로 설정하여 나중에 규칙을 삽입할 여유를 남기세요.<br>
+          2. 명시적 거부 규칙을 허용 규칙 뒤에 추가하여 의도를 명확히 하세요.<br>
+          3. NACL 변경 전 반드시 현재 규칙을 백업(기록)하세요.<br>
+          4. 변경 후 즉시 서비스 정상 동작을 확인하세요 - NACL 변경은 즉시 적용됩니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ======================================== -->
+    <!-- 섹션 3: WAF를 ALB에 연동 -->
+    <!-- ======================================== -->
+    <section class="content-section" id="waf-alb-integration">
+      <h2>3. WAF를 ALB에 연동</h2>
+
+      <p>
+        ShopEasy 이커머스 서비스는 ALB(Application Load Balancer)를 통해 웹 트래픽을 처리합니다.
+        AWS WAF를 ALB에 연동하면 SQL Injection, XSS(Cross-Site Scripting), 과도한 요청(DDoS) 등
+        웹 애플리케이션 공격으로부터 서비스를 보호할 수 있습니다.
+      </p>
+
+      <div class="diagram">
+        <div class="diagram-title">ShopEasy WAF + ALB 연동 아키텍처</div>
+        <div class="diagram-row">
+          <div class="diagram-box user">
+            <div class="box-title">사용자</div>
+            <div class="box-sub">웹 브라우저</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box waf">
+            <div class="box-title">AWS WAF</div>
+            <div class="box-sub">Web ACL 규칙 검사</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box network">
+            <div class="box-title">ALB</div>
+            <div class="box-sub">ShopEasy-ALB</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box compute">
+            <div class="box-title">EC2 인스턴스</div>
+            <div class="box-sub">ShopEasy 앱 서버</div>
+          </div>
+        </div>
+        <div class="diagram-row" style="margin-top:0.5rem;">
+          <div class="diagram-box security" style="margin-left:8rem;">
+            <div class="box-title">차단된 요청</div>
+            <div class="box-sub">403 Forbidden 반환</div>
+          </div>
+        </div>
+      </div>
+
+      <h3>ShopEasy에 필요한 WAF 규칙</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>위협</th>
+            <th>규칙 유형</th>
+            <th>설명</th>
+            <th>우선순위</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>SQL Injection</td>
+            <td>AWS 관리형 규칙</td>
+            <td>상품 검색, 로그인 폼에서의 SQL 삽입 공격 방어</td>
+            <td>높음</td>
+          </tr>
+          <tr>
+            <td>XSS</td>
+            <td>AWS 관리형 규칙</td>
+            <td>리뷰 작성, 상품 설명 등에서의 스크립트 삽입 방어</td>
+            <td>높음</td>
+          </tr>
+          <tr>
+            <td>Rate Limiting</td>
+            <td>Rate-based 규칙</td>
+            <td>동일 IP에서 5분간 2000회 이상 요청 시 차단</td>
+            <td>중간</td>
+          </tr>
+          <tr>
+            <td>Bad Bot</td>
+            <td>AWS 관리형 규칙</td>
+            <td>알려진 봇/스크래퍼의 접근 차단</td>
+            <td>중간</td>
+          </tr>
+          <tr>
+            <td>IP Reputation</td>
+            <td>AWS 관리형 규칙</td>
+            <td>악성 IP 리스트 기반 차단</td>
+            <td>높음</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">Web ACL 규칙 평가 순서</div>
+        <p>
+          WAF Web ACL의 규칙은 <strong>우선순위 번호가 낮은 것부터</strong> 순서대로 평가됩니다.
+          일치하는 규칙이 발견되면 해당 액션(Allow/Block/Count)이 적용되고 나머지 규칙은 평가하지 않습니다.
+          모든 규칙에 일치하지 않는 경우 <strong>기본 액션</strong>(Default Action)이 적용됩니다.
+          ShopEasy에서는 기본 액션을 <strong>Allow</strong>로 설정하고, 차단할 트래픽만 Block하는 방식을 권장합니다.
+        </p>
+      </div>
+
+      <!-- Lab: WAF 연동 -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: ShopEasy ALB에 WAF 적용</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">Web ACL 생성</div>
+            <p>AWS 콘솔 > WAF & Shield > Web ACLs > Create web ACL을 클릭합니다.</p>
+            <ul>
+              <li><strong>이름</strong>: <code>ShopEasy-WebACL</code></li>
+              <li><strong>리전</strong>: ap-northeast-2 (서울)</li>
+              <li><strong>리소스 유형</strong>: Regional resources (ALB)</li>
+              <li><strong>연결 리소스</strong>: ShopEasy-ALB 선택</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">AWS 관리형 규칙 추가 - SQL Injection 방어</div>
+            <p>규칙 추가 > AWS managed rule groups에서 다음을 선택합니다:</p>
+            <ul>
+              <li><strong>AWSManagedRulesSQLiRuleSet</strong>: SQL 인젝션 방어 (우선순위: 1)</li>
+              <li><strong>AWSManagedRulesCommonRuleSet</strong>: 일반적인 웹 공격 방어 (우선순위: 2)</li>
+              <li><strong>AWSManagedRulesKnownBadInputsRuleSet</strong>: 알려진 악성 입력 패턴 (우선순위: 3)</li>
+              <li><strong>AWSManagedRulesAmazonIpReputationList</strong>: IP 평판 기반 차단 (우선순위: 4)</li>
+            </ul>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">json</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>// Web ACL 구성 예시 (CLI용 JSON)
+{
+  "Name": "ShopEasy-WebACL",
+  "Scope": "REGIONAL",
+  "DefaultAction": { "Allow": {} },
+  "Rules": [
+    {
+      "Name": "AWS-AWSManagedRulesSQLiRuleSet",
+      "Priority": 1,
+      "Statement": {
+        "ManagedRuleGroupStatement": {
+          "VendorName": "AWS",
+          "Name": "AWSManagedRulesSQLiRuleSet"
+        }
+      },
+      "OverrideAction": { "None": {} },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "SQLiRuleSet"
+      }
+    },
+    {
+      "Name": "AWS-AWSManagedRulesCommonRuleSet",
+      "Priority": 2,
+      "Statement": {
+        "ManagedRuleGroupStatement": {
+          "VendorName": "AWS",
+          "Name": "AWSManagedRulesCommonRuleSet"
+        }
+      },
+      "OverrideAction": { "None": {} },
+      "VisibilityConfig": {
+        "SampledRequestsEnabled": true,
+        "CloudWatchMetricsEnabled": true,
+        "MetricName": "CommonRuleSet"
+      }
+    }
+  ],
+  "VisibilityConfig": {
+    "SampledRequestsEnabled": true,
+    "CloudWatchMetricsEnabled": true,
+    "MetricName": "ShopEasy-WebACL"
+  }
+}</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Rate Limiting 규칙 추가</div>
+            <p>커스텀 규칙으로 Rate-based 규칙을 추가합니다:</p>
+            <ul>
+              <li><strong>규칙 유형</strong>: Rate-based rule</li>
+              <li><strong>Rate limit</strong>: 2000 (5분간 최대 요청 수)</li>
+              <li><strong>액션</strong>: Block</li>
+            </ul>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">json</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code>{
+  "Name": "ShopEasy-RateLimit",
+  "Priority": 5,
+  "Statement": {
+    "RateBasedStatement": {
+      "Limit": 2000,
+      "AggregateKeyType": "IP"
+    }
+  },
+  "Action": { "Block": {} },
+  "VisibilityConfig": {
+    "SampledRequestsEnabled": true,
+    "CloudWatchMetricsEnabled": true,
+    "MetricName": "ShopEasy-RateLimit"
+  }
+}</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">WAF 테스트 - SQL Injection 공격 시뮬레이션</div>
+            <p>WAF가 정상적으로 동작하는지 SQL Injection 공격을 시뮬레이션합니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 정상 요청 (통과해야 함)
+curl -v "https://shopeasy-alb.ap-northeast-2.elb.amazonaws.com/api/products?search=laptop"
+
+# SQL Injection 시도 (차단되어야 함 - 403 반환)
+curl -v "https://shopeasy-alb.ap-northeast-2.elb.amazonaws.com/api/products?search=laptop' OR 1=1 --"
+
+# XSS 시도 (차단되어야 함)
+curl -v "https://shopeasy-alb.ap-northeast-2.elb.amazonaws.com/api/reviews" \
+  -H "Content-Type: application/json" \
+  -d '{"comment": "&lt;script&gt;alert(\"xss\")&lt;/script&gt;"}'</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">WAF 로깅 활성화</div>
+            <p>차단된 요청을 분석하기 위해 WAF 로깅을 활성화합니다:</p>
+            <ul>
+              <li>Web ACL 선택 > Logging and metrics 탭</li>
+              <li>Enable logging 클릭</li>
+              <li>대상: CloudWatch Logs (<code>aws-waf-logs-shopeasy</code>)</li>
+              <li>필터: Block된 요청만 로깅 (비용 절감)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box danger">
+        <div class="info-box-title">WAF 적용 시 주의사항</div>
+        <p>
+          1. WAF 규칙을 처음 적용할 때는 <strong>Count 모드</strong>로 먼저 테스트하세요. 정상 트래픽이 오탐지로 차단될 수 있습니다.<br>
+          2. 특히 <code>AWSManagedRulesCommonRuleSet</code>의 <code>SizeRestrictions_BODY</code> 규칙은 파일 업로드가 있는 ShopEasy에서 오탐지가 발생할 수 있습니다.<br>
+          3. Count 모드에서 1~2주 동안 모니터링한 후, 오탐지가 없는 규칙부터 Block으로 전환하세요.<br>
+          4. 로그인/결제 등 중요 API에 대해서는 별도로 테스트를 수행하세요.
+        </p>
+      </div>
+    </section>
+
+    <!-- ======================================== -->
+    <!-- 섹션 4: Session Manager 전환 -->
+    <!-- ======================================== -->
+    <section class="content-section" id="session-manager">
+      <h2>4. Bastion Host에서 Session Manager로 전환</h2>
+
+      <p>
+        기존 ShopEasy 아키텍처에서는 프라이빗 서브넷의 EC2 인스턴스에 접속하기 위해 퍼블릭 서브넷에 Bastion Host를 배치하고,
+        SSH(22번 포트)를 통해 접근했습니다. 이 방식은 SSH 키 관리, 포트 개방, 감사 추적 등에서 보안 취약점이 존재합니다.
+        AWS Systems Manager Session Manager로 전환하면 이러한 문제를 해결할 수 있습니다.
+      </p>
+
+      <h3>Bastion Host 방식의 문제점</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>문제점</th>
+            <th>상세 설명</th>
+            <th>위험도</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>SSH 키 관리</strong></td>
+            <td>팀원 변경 시 키 교체 필요, 키 유출 위험</td>
+            <td>높음</td>
+          </tr>
+          <tr>
+            <td><strong>포트 개방</strong></td>
+            <td>인바운드 22번 포트 개방 필요 (공격 표면 증가)</td>
+            <td>높음</td>
+          </tr>
+          <tr>
+            <td><strong>감사 추적</strong></td>
+            <td>누가 언제 어떤 명령을 실행했는지 추적 어려움</td>
+            <td>중간</td>
+          </tr>
+          <tr>
+            <td><strong>Bastion Host 관리</strong></td>
+            <td>별도 인스턴스 비용, 패치, 보안 관리 필요</td>
+            <td>중간</td>
+          </tr>
+          <tr>
+            <td><strong>네트워크 경로</strong></td>
+            <td>인터넷 경유 접속, 중간자 공격 가능성</td>
+            <td>중간</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Session Manager 장점</h3>
+
+      <div class="info-box tip">
+        <div class="info-box-title">Session Manager의 핵심 장점</div>
+        <p>
+          <strong>1. SSH 키 불필요</strong>: IAM 인증으로 접근 제어, 키 관리 부담 제거<br>
+          <strong>2. 포트 개방 불필요</strong>: 인바운드 포트를 열지 않아도 접속 가능 (아웃바운드 443만 필요)<br>
+          <strong>3. 완전한 감사 추적</strong>: 모든 세션과 명령어가 CloudWatch/S3에 로깅<br>
+          <strong>4. IAM 기반 접근 제어</strong>: 세분화된 권한 관리 가능 (특정 인스턴스만 접근 등)<br>
+          <strong>5. 비용 절감</strong>: Bastion Host 인스턴스 불필요
+        </p>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">Bastion Host vs Session Manager 비교</div>
+        <div class="diagram-row">
+          <div class="diagram-col">
+            <div style="font-weight:700; color:var(--danger); margin-bottom:0.5rem;">Before (Bastion Host)</div>
+            <div class="diagram-box user">
+              <div class="box-title">관리자</div>
+              <div class="box-sub">SSH 키 필요</div>
+            </div>
+            <div class="diagram-arrow down">&darr;</div>
+            <div class="diagram-box security">
+              <div class="box-title">Bastion Host</div>
+              <div class="box-sub">퍼블릭 서브넷 (포트 22 개방)</div>
+            </div>
+            <div class="diagram-arrow down">&darr;</div>
+            <div class="diagram-box compute">
+              <div class="box-title">EC2 (앱 서버)</div>
+              <div class="box-sub">프라이빗 서브넷</div>
+            </div>
+          </div>
+          <div style="width:3rem;"></div>
+          <div class="diagram-col">
+            <div style="font-weight:700; color:var(--success); margin-bottom:0.5rem;">After (Session Manager)</div>
+            <div class="diagram-box user">
+              <div class="box-title">관리자</div>
+              <div class="box-sub">IAM 인증</div>
+            </div>
+            <div class="diagram-arrow down">&darr;</div>
+            <div class="diagram-box shield">
+              <div class="box-title">Session Manager</div>
+              <div class="box-sub">AWS API (HTTPS)</div>
+            </div>
+            <div class="diagram-arrow down">&darr;</div>
+            <div class="diagram-box compute">
+              <div class="box-title">EC2 (앱 서버)</div>
+              <div class="box-sub">SSM Agent 설치됨</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3>Session Manager 작동 원리</h3>
+      <p>
+        Session Manager는 SSM Agent가 <strong>아웃바운드 HTTPS(443)</strong> 연결을 통해 Systems Manager 서비스와 통신합니다.
+        인바운드 포트를 열 필요가 없으므로 공격 표면이 크게 줄어듭니다.
+      </p>
+      <ol>
+        <li>관리자가 AWS 콘솔 또는 CLI에서 세션 시작 요청</li>
+        <li>IAM 정책이 해당 인스턴스에 대한 접근 권한을 확인</li>
+        <li>SSM Agent가 Systems Manager 엔드포인트와 WebSocket 연결 수립</li>
+        <li>암호화된 터널을 통해 셸 접속 제공</li>
+        <li>모든 입출력이 CloudWatch Logs / S3에 기록</li>
+      </ol>
+
+      <h3>필요한 IAM 역할 설정</h3>
+
+      <p>EC2 인스턴스에 연결할 IAM 역할 (인스턴스 프로파일):</p>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:UpdateInstanceInformation",
+        "ssmmessages:CreateControlChannel",
+        "ssmmessages:CreateDataChannel",
+        "ssmmessages:OpenControlChannel",
+        "ssmmessages:OpenDataChannel"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams"
+      ],
+      "Resource": "arn:aws:logs:ap-northeast-2:123456789012:log-group:/shopeasy/ssm-sessions:*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": "arn:aws:s3:::shopeasy-ssm-session-logs/*"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <p>관리자 IAM 사용자/역할에 필요한 정책:</p>
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:StartSession"
+      ],
+      "Resource": [
+        "arn:aws:ec2:ap-northeast-2:123456789012:instance/i-0abc123def456"
+      ],
+      "Condition": {
+        "StringLike": {
+          "ssm:resourceTag/Environment": "production"
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:TerminateSession",
+        "ssm:ResumeSession"
+      ],
+      "Resource": "arn:aws:ssm:*:*:session/${aws:username}-*"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="info-box concept">
+        <div class="info-box-title">IAM Condition을 활용한 세분화 제어</div>
+        <p>
+          위 정책에서 <code>ssm:resourceTag/Environment</code> 조건을 사용하여
+          <strong>production 태그가 있는 인스턴스에만 접근</strong>을 허용했습니다.
+          이를 통해 개발자는 개발 서버만, 운영팀은 운영 서버만 접근하는 등
+          역할별 접근 제어를 구현할 수 있습니다.
+        </p>
+      </div>
+
+      <!-- Lab: Session Manager 설정 -->
+      <div class="lab-section">
+        <h3 class="lab-title">Lab: Session Manager 설정 및 Bastion Host 제거</h3>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">SSM Agent 설치 확인</div>
+            <p>Amazon Linux 2/2023에는 SSM Agent가 기본 설치되어 있습니다. 다른 OS의 경우:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># Amazon Linux 2 - 이미 설치됨, 상태 확인
+sudo systemctl status amazon-ssm-agent
+
+# Ubuntu의 경우 설치
+sudo snap install amazon-ssm-agent --classic
+sudo systemctl enable amazon-ssm-agent
+sudo systemctl start amazon-ssm-agent</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">EC2 인스턴스 프로파일 연결</div>
+            <p>SSM 관련 권한이 포함된 IAM 역할을 EC2 인스턴스에 연결합니다.</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 인스턴스 프로파일 연결
+aws ec2 associate-iam-instance-profile \
+  --instance-id i-0abc123def456 \
+  --iam-instance-profile Name=ShopEasy-EC2-SSM-Profile
+
+# 또는 기존 역할에 AmazonSSMManagedInstanceCore 정책 추가
+aws iam attach-role-policy \
+  --role-name ShopEasy-EC2-Role \
+  --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">VPC 엔드포인트 설정 (프라이빗 서브넷용)</div>
+            <p>
+              프라이빗 서브넷의 EC2 인스턴스가 인터넷 없이 SSM에 접근하려면
+              VPC 엔드포인트가 필요합니다. 다음 3개의 엔드포인트를 생성합니다:
+            </p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># 1. SSM 엔드포인트
+aws ec2 create-vpc-endpoint \
+  --vpc-id vpc-0abc123def456 \
+  --service-name com.amazonaws.ap-northeast-2.ssm \
+  --vpc-endpoint-type Interface \
+  --subnet-ids subnet-priv1 subnet-priv2 \
+  --security-group-ids sg-ssm-endpoint \
+  --private-dns-enabled
+
+# 2. SSM Messages 엔드포인트
+aws ec2 create-vpc-endpoint \
+  --vpc-id vpc-0abc123def456 \
+  --service-name com.amazonaws.ap-northeast-2.ssmmessages \
+  --vpc-endpoint-type Interface \
+  --subnet-ids subnet-priv1 subnet-priv2 \
+  --security-group-ids sg-ssm-endpoint \
+  --private-dns-enabled
+
+# 3. EC2 Messages 엔드포인트
+aws ec2 create-vpc-endpoint \
+  --vpc-id vpc-0abc123def456 \
+  --service-name com.amazonaws.ap-northeast-2.ec2messages \
+  --vpc-endpoint-type Interface \
+  --subnet-ids subnet-priv1 subnet-priv2 \
+  --security-group-ids sg-ssm-endpoint \
+  --private-dns-enabled</code></pre>
+            </div>
+            <p>VPC 엔드포인트 보안그룹은 인바운드 <strong>HTTPS(443)</strong>만 허용합니다.</p>
+          </div>
+
+          <div class="step">
+            <div class="step-title">세션 로깅 설정</div>
+            <p>Systems Manager > Session Manager > 기본 설정에서 로깅을 활성화합니다:</p>
+            <ul>
+              <li><strong>CloudWatch Logs</strong>: 로그 그룹 <code>/shopeasy/ssm-sessions</code> 지정</li>
+              <li><strong>S3 버킷</strong>: <code>shopeasy-ssm-session-logs</code> 지정</li>
+              <li><strong>KMS 암호화</strong>: 세션 데이터 암호화 활성화</li>
+            </ul>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Session Manager로 접속 테스트</div>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># AWS CLI로 세션 시작
+aws ssm start-session --target i-0abc123def456
+
+# 또는 AWS 콘솔에서:
+# EC2 > 인스턴스 선택 > 연결 > Session Manager 탭 > 연결
+
+# 세션 내에서 테스트
+whoami
+hostname
+curl http://localhost:3000/health</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">Bastion Host 보안그룹 인바운드 22번 포트 제거</div>
+            <p>Session Manager가 정상 동작함을 확인한 후, Bastion Host의 SSH 인바운드 규칙을 제거합니다:</p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># Bastion Host 보안그룹에서 SSH 인바운드 규칙 제거
+aws ec2 revoke-security-group-ingress \
+  --group-id sg-bastion123 \
+  --protocol tcp \
+  --port 22 \
+  --cidr 0.0.0.0/0
+
+# 앱 서버 보안그룹에서도 Bastion으로부터의 SSH 규칙 제거
+aws ec2 revoke-security-group-ingress \
+  --group-id sg-app123 \
+  --protocol tcp \
+  --port 22 \
+  --source-group sg-bastion123
+
+# 변경 확인
+aws ec2 describe-security-groups \
+  --group-ids sg-bastion123 \
+  --query "SecurityGroups[0].IpPermissions"</code></pre>
+            </div>
+            <div class="info-box warning">
+              <div class="info-box-title">주의: 순서가 중요합니다</div>
+              <p>
+                반드시 Session Manager로 접속이 정상적으로 되는 것을 확인한 <strong>후에</strong> SSH 포트를 제거하세요.
+                Session Manager 접속이 안 되는 상태에서 SSH 포트를 제거하면 인스턴스에 접근할 수 없게 됩니다.
+                긴급 상황을 대비해 AWS 콘솔의 EC2 직렬 콘솔 접근도 설정해 두는 것을 권장합니다.
+              </p>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">(선택) Bastion Host 인스턴스 종료</div>
+            <p>
+              모든 팀원이 Session Manager를 통해 정상적으로 접속할 수 있음을 확인한 후,
+              Bastion Host 인스턴스를 중지 또는 종료하여 비용을 절감합니다.
+            </p>
+            <div class="code-block">
+              <div class="code-header">
+                <span class="lang">bash</span>
+                <button class="copy-btn">복사</button>
+              </div>
+              <pre><code># Bastion Host 중지 (일단 중지 후 문제 없으면 종료)
+aws ec2 stop-instances --instance-ids i-bastion123
+
+# 2주 후 문제 없으면 종료
+aws ec2 terminate-instances --instance-ids i-bastion123</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">Session Manager 모범 사례</div>
+        <p>
+          1. <strong>세션 유휴 타임아웃</strong>을 20분으로 설정하여 방치된 세션을 자동 종료하세요.<br>
+          2. <strong>KMS 암호화</strong>를 활성화하여 세션 데이터를 암호화하세요.<br>
+          3. <strong>IAM 정책</strong>에서 <code>ssm:StartSession</code> 리소스를 특정 인스턴스로 제한하세요.<br>
+          4. <strong>세션 로그</strong>를 CloudWatch Logs와 S3 모두에 저장하여 실시간 모니터링과 장기 보관을 병행하세요.<br>
+          5. <strong>CloudTrail</strong>에서 <code>StartSession</code> API 호출을 모니터링하여 비인가 접근을 탐지하세요.
+        </p>
+      </div>
+    </section>
+
+    <!-- 네비게이션 -->
+    <div class="chapter-nav">
+      <a href="08-waf.html" class="prev">이전: AWS WAF</a>
+      <a href="10-kms-encryption.html" class="next">다음: KMS & 암호화 기초</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/09-network-security-lab.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>

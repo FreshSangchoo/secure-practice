@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/03-iam-policy-deep-dive.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IAM 정책 언어 심화 - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li><a href="#policy-types">IAM 정책 유형</a></li>
+      <li><a href="#json-structure">JSON 정책 구조 심화</a></li>
+      <li><a href="#evaluation-logic">정책 평가 로직</a></li>
+      <li><a href="#condition-keys">Condition 키 활용</a></li>
+      <li><a href="#practical-examples">실용적 정책 예제</a></li>
+      <li><a href="#lab-simulator">실습: 정책 시뮬레이터</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 03</span>
+      <h1>IAM 정책 언어 심화</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>IAM 정책의 6가지 유형(자격증명 기반, 리소스 기반, 권한 경계, SCP, ACL, 세션)을 구분할 수 있다</li>
+          <li>JSON 정책의 각 요소(Effect, Action, Resource, Condition, Principal)를 정확히 작성할 수 있다</li>
+          <li>정책 평가 로직(명시적 거부 > 명시적 허용 > 묵시적 거부)을 이해하고 적용할 수 있다</li>
+          <li>Condition 키를 활용하여 IP 제한, MFA 강제, 태그 기반 접근 제어 정책을 작성할 수 있다</li>
+          <li>IAM 정책 시뮬레이터로 정책을 검증할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ==================== 섹션 1: IAM 정책 유형 ==================== -->
+    <section class="content-section" id="policy-types">
+      <h2>1. IAM 정책 유형</h2>
+
+      <p>
+        기초 과정에서는 IAM 정책을 간단히 다루었지만, 실제 AWS에는 <strong>6가지 유형</strong>의 정책이 존재합니다.
+        각 유형은 서로 다른 곳에 적용되며, 정책 평가 시 모두 함께 고려됩니다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>정책 유형</th>
+            <th>부착 대상</th>
+            <th>역할</th>
+            <th>예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>자격증명 기반 정책<br>(Identity-based)</strong></td>
+            <td>IAM 사용자, 그룹, 역할</td>
+            <td>주체가 무엇을 할 수 있는지 정의</td>
+            <td>S3 읽기 정책을 개발자 그룹에 부착</td>
+          </tr>
+          <tr>
+            <td><strong>리소스 기반 정책<br>(Resource-based)</strong></td>
+            <td>S3 버킷, SQS 큐, Lambda 등</td>
+            <td>누가 이 리소스에 접근 가능한지 정의</td>
+            <td>S3 버킷 정책으로 특정 계정 접근 허용</td>
+          </tr>
+          <tr>
+            <td><strong>권한 경계<br>(Permission Boundary)</strong></td>
+            <td>IAM 사용자, 역할</td>
+            <td>자격증명 기반 정책의 최대 범위 제한</td>
+            <td>개발자가 만들 수 있는 역할의 최대 권한 제한</td>
+          </tr>
+          <tr>
+            <td><strong>서비스 제어 정책<br>(SCP)</strong></td>
+            <td>Organizations OU, 계정</td>
+            <td>계정 전체의 최대 권한 범위 제한</td>
+            <td>특정 리전에서만 리소스 생성 허용</td>
+          </tr>
+          <tr>
+            <td><strong>ACL<br>(Access Control List)</strong></td>
+            <td>S3 객체, VPC 서브넷</td>
+            <td>크로스 계정 접근 제어 (레거시)</td>
+            <td>S3 객체 ACL (비권장, 버킷 정책 권장)</td>
+          </tr>
+          <tr>
+            <td><strong>세션 정책<br>(Session Policy)</strong></td>
+            <td>STS AssumeRole 호출 시</td>
+            <td>세션의 권한을 역할 정책보다 더 제한</td>
+            <td>페더레이션 사용자의 임시 권한 축소</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">정책 유형 간 관계</div>
+        <p>
+          여러 정책 유형이 동시에 적용될 때, 최종 권한은 모든 정책의 <strong>교집합</strong>으로 결정됩니다.
+          예를 들어, SCP가 S3 접근을 허용하고 자격증명 정책도 허용하지만 권한 경계가 거부하면 &rarr; <strong>결과: 거부</strong>.
+          각 유형은 "허용의 최대 범위"를 점점 좁히는 필터 역할을 합니다.
+        </p>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">정책 유형별 적용 범위 (넓은 것 &rarr; 좁은 것)</div>
+        <div class="diagram-group cloud" style="padding: 2rem;">
+          <div class="diagram-group-label">SCP (조직 수준 최대 범위)</div>
+          <div class="diagram-group security-layer" style="padding: 1.5rem;">
+            <div class="diagram-group-label">Permission Boundary (사용자/역할 최대 범위)</div>
+            <div class="diagram-group vpc" style="padding: 1.5rem;">
+              <div class="diagram-group-label">Identity Policy + Resource Policy (실제 부여 권한)</div>
+              <div class="diagram-row">
+                <div class="diagram-box iam">
+                  <div class="box-title">최종 유효 권한</div>
+                  <div class="box-sub">모든 정책의 교집합</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유: 다층 필터</div>
+        <p>
+          <strong>SCP</strong>는 건물 출입구의 보안 게이트 (회사 직원만 입장 가능),
+          <strong>Permission Boundary</strong>는 특정 층의 출입 카드 (2층~5층만 접근 가능),
+          <strong>Identity Policy</strong>는 개별 방의 키 (302호실 접근 가능)입니다.
+          최종적으로 접근 가능한 곳은 세 가지 모두의 교집합입니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== 섹션 2: JSON 정책 구조 심화 ==================== -->
+    <section class="content-section" id="json-structure">
+      <h2>2. JSON 정책 구조 심화</h2>
+
+      <p>
+        IAM 정책은 JSON 형식으로 작성됩니다.
+        각 구성 요소를 정확히 이해해야 올바른 보안 정책을 만들 수 있습니다.
+      </p>
+
+      <h3>2.1 정책 전체 구조</h3>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Id": "ShopEasyS3Policy",
+  "Statement": [
+    {
+      "Sid": "AllowProductImageUpload",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:role/ShopEasyAPIRole"
+      },
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::shopeasy-product-images/*",
+      "Condition": {
+        "StringEquals": {
+          "s3:x-amz-server-side-encryption": "aws:kms"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>2.2 각 요소 상세 설명</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>요소</th>
+            <th>필수 여부</th>
+            <th>설명</th>
+            <th>값 예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Version</strong></td>
+            <td>필수</td>
+            <td>정책 언어 버전. 항상 "2012-10-17" 사용</td>
+            <td><code>"2012-10-17"</code></td>
+          </tr>
+          <tr>
+            <td><strong>Id</strong></td>
+            <td>선택</td>
+            <td>정책 식별자. 리소스 기반 정책에서 주로 사용</td>
+            <td><code>"ShopEasyS3Policy"</code></td>
+          </tr>
+          <tr>
+            <td><strong>Statement</strong></td>
+            <td>필수</td>
+            <td>하나 이상의 권한 규칙 배열</td>
+            <td><code>[{...}, {...}]</code></td>
+          </tr>
+          <tr>
+            <td><strong>Sid</strong></td>
+            <td>선택</td>
+            <td>Statement 식별자. 가독성을 위해 권장</td>
+            <td><code>"AllowProductImageUpload"</code></td>
+          </tr>
+          <tr>
+            <td><strong>Effect</strong></td>
+            <td>필수</td>
+            <td>허용(Allow) 또는 거부(Deny)</td>
+            <td><code>"Allow"</code> 또는 <code>"Deny"</code></td>
+          </tr>
+          <tr>
+            <td><strong>Principal</strong></td>
+            <td>리소스 정책에서 필수</td>
+            <td>접근 주체 (사용자, 역할, 계정, 서비스)</td>
+            <td><code>{"AWS": "arn:aws:iam::..."}</code></td>
+          </tr>
+          <tr>
+            <td><strong>Action</strong></td>
+            <td>필수</td>
+            <td>허용/거부할 API 작업</td>
+            <td><code>["s3:GetObject", "s3:PutObject"]</code></td>
+          </tr>
+          <tr>
+            <td><strong>Resource</strong></td>
+            <td>필수</td>
+            <td>정책이 적용되는 AWS 리소스 ARN</td>
+            <td><code>"arn:aws:s3:::bucket-name/*"</code></td>
+          </tr>
+          <tr>
+            <td><strong>Condition</strong></td>
+            <td>선택</td>
+            <td>정책 적용 조건 (IP, MFA, 태그 등)</td>
+            <td><code>{"IpAddress": {"aws:SourceIp": "..."}}</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>2.3 Action 작성 패턴</h3>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>// 구체적인 액션 지정 (권장)
+"Action": ["s3:GetObject", "s3:PutObject"]
+
+// 와일드카드로 범위 지정
+"Action": "s3:Get*"          // s3:GetObject, s3:GetBucketPolicy 등 모두 포함
+"Action": "s3:*"             // S3의 모든 액션 (비권장!)
+
+// 여러 서비스 액션 혼합
+"Action": [
+  "s3:GetObject",
+  "dynamodb:GetItem",
+  "logs:PutLogEvents"
+]
+
+// NotAction: 지정한 액션을 제외한 나머지
+"NotAction": "iam:*"         // IAM 이외의 모든 서비스 허용</code></pre>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">NotAction 사용 시 주의</div>
+        <p>
+          <code>NotAction</code>은 "지정한 액션을 <strong>제외한</strong> 나머지"를 의미합니다.
+          <code>"Effect": "Allow", "NotAction": "iam:*"</code>는 IAM을 제외한 모든 서비스를 허용합니다.
+          하지만 이는 새로 추가되는 서비스까지 자동으로 허용하므로, 가능하면 <strong>명시적 Action 목록</strong>을 사용하세요.
+        </p>
+      </div>
+
+      <h3>2.4 Resource(ARN) 작성 패턴</h3>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">text</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>ARN 형식: arn:partition:service:region:account-id:resource-type/resource-id
+
+예시:
+arn:aws:s3:::shopeasy-product-images          (S3 버킷 자체)
+arn:aws:s3:::shopeasy-product-images/*        (버킷 내 모든 객체)
+arn:aws:s3:::shopeasy-product-images/uploads/* (특정 prefix 아래 객체)
+arn:aws:ec2:ap-northeast-2:123456789012:instance/i-1234567890abcdef0
+arn:aws:rds:ap-northeast-2:123456789012:db:shopeasy-db
+arn:aws:iam::123456789012:user/developer-kim   (IAM은 리전 없음)
+arn:aws:lambda:ap-northeast-2:123456789012:function:shopeasy-*</code></pre>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">S3 정책 작성 시 흔한 실수</div>
+        <p>
+          S3에서는 <strong>버킷 수준</strong>(arn:aws:s3:::bucket-name)과 <strong>객체 수준</strong>(arn:aws:s3:::bucket-name/*)이 별도의 리소스입니다.
+          <code>s3:ListBucket</code>은 버킷 수준에, <code>s3:GetObject</code>는 객체 수준에 적용됩니다.
+          두 ARN을 모두 지정해야 정상 작동합니다.
+        </p>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListProductImages",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::shopeasy-product-images"
+    },
+    {
+      "Sid": "ReadProductImages",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::shopeasy-product-images/*"
+    }
+  ]
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- ==================== 섹션 3: 정책 평가 로직 ==================== -->
+    <section class="content-section" id="evaluation-logic">
+      <h2>3. 정책 평가 로직</h2>
+
+      <p>
+        AWS가 API 요청을 받으면 모든 관련 정책을 수집하고, 정해진 순서대로 평가합니다.
+        이 로직을 이해하지 못하면 "왜 접근이 안 되는지" 또는 "왜 접근이 되는지" 디버깅할 수 없습니다.
+      </p>
+
+      <h3>3.1 정책 평가 순서</h3>
+
+      <div class="info-box concept">
+        <div class="info-box-title">핵심 규칙 3가지</div>
+        <p>
+          1. <strong>기본값은 묵시적 거부 (Implicit Deny)</strong>: 아무 정책도 없으면 모든 것이 거부됩니다.<br>
+          2. <strong>명시적 허용 (Explicit Allow)</strong>: Allow 문이 있으면 접근이 허용됩니다.<br>
+          3. <strong>명시적 거부 (Explicit Deny)</strong>: Deny 문이 있으면 어떤 Allow보다 우선합니다. <strong>Deny는 항상 최우선!</strong>
+        </p>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-title">IAM 정책 평가 플로우차트</div>
+        <div class="diagram-row">
+          <div class="diagram-box user"><div class="box-title">API 요청 수신</div><div class="box-sub">사용자/역할이 API 호출</div></div>
+        </div>
+        <div class="diagram-arrow down">&darr;</div>
+        <div class="diagram-row">
+          <div class="diagram-box security"><div class="box-title">1단계: 명시적 Deny 확인</div><div class="box-sub">모든 정책에서 Deny가 있는가?</div></div>
+        </div>
+        <div class="diagram-row" style="gap: 2rem;">
+          <div class="diagram-col">
+            <div class="diagram-arrow down">&darr; Yes</div>
+            <div class="diagram-box security" style="border-color: #C62828;"><div class="box-title" style="color: #C62828;">최종: DENY</div><div class="box-sub">접근 거부</div></div>
+          </div>
+          <div class="diagram-col">
+            <div class="diagram-arrow down">&darr; No</div>
+            <div class="diagram-box iam"><div class="box-title">2단계: SCP 확인</div><div class="box-sub">Organizations SCP가 허용하는가?</div></div>
+          </div>
+        </div>
+        <div class="diagram-arrow down">&darr; 허용</div>
+        <div class="diagram-row">
+          <div class="diagram-box iam"><div class="box-title">3단계: 리소스 정책 확인</div><div class="box-sub">리소스 기반 정책이 허용하는가?</div></div>
+        </div>
+        <div class="diagram-arrow down">&darr;</div>
+        <div class="diagram-row">
+          <div class="diagram-box iam"><div class="box-title">4단계: Permission Boundary 확인</div><div class="box-sub">권한 경계 내에 있는가?</div></div>
+        </div>
+        <div class="diagram-arrow down">&darr;</div>
+        <div class="diagram-row">
+          <div class="diagram-box iam"><div class="box-title">5단계: 자격증명 정책 확인</div><div class="box-sub">Identity 정책이 Allow하는가?</div></div>
+        </div>
+        <div class="diagram-row" style="gap: 2rem; margin-top: 0.5rem;">
+          <div class="diagram-col">
+            <div class="diagram-arrow down">&darr; Yes</div>
+            <div class="diagram-box storage" style="border-color: #2E7D32;"><div class="box-title" style="color: #2E7D32;">최종: ALLOW</div><div class="box-sub">접근 허용</div></div>
+          </div>
+          <div class="diagram-col">
+            <div class="diagram-arrow down">&darr; No</div>
+            <div class="diagram-box security" style="border-color: #C62828;"><div class="box-title" style="color: #C62828;">최종: DENY</div><div class="box-sub">묵시적 거부</div></div>
+          </div>
+        </div>
+      </div>
+
+      <h3>3.2 평가 로직 예제</h3>
+
+      <div class="info-box concept">
+        <div class="info-box-title">예제: ShopEasy 개발자의 S3 접근</div>
+        <p>
+          개발자 Kim이 <code>s3:DeleteObject</code>를 호출한다고 가정합니다.<br><br>
+          <strong>자격증명 정책:</strong> <code>s3:*</code> Allow (개발자 그룹에 부착)<br>
+          <strong>Permission Boundary:</strong> <code>s3:GetObject, s3:PutObject, s3:ListBucket</code>만 Allow<br>
+          <strong>결과:</strong> <span style="color: #C62828; font-weight: 700;">DENY</span> &mdash; s3:DeleteObject는 Permission Boundary에 포함되지 않으므로 거부됩니다.<br><br>
+          자격증명 정책이 아무리 넓어도, Permission Boundary의 범위를 넘어설 수 없습니다.
+        </p>
+      </div>
+
+      <h3>3.3 동일 계정 vs 크로스 계정 평가 차이</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>시나리오</th>
+            <th>평가 방식</th>
+            <th>설명</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>동일 계정 접근</strong></td>
+            <td>자격증명 정책 OR 리소스 정책</td>
+            <td>둘 중 하나라도 Allow하면 접근 가능</td>
+          </tr>
+          <tr>
+            <td><strong>크로스 계정 접근</strong></td>
+            <td>자격증명 정책 AND 리소스 정책</td>
+            <td>양쪽 모두 Allow해야 접근 가능</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box warning">
+        <div class="info-box-title">크로스 계정 접근의 일반적인 실수</div>
+        <p>
+          계정 A의 사용자가 계정 B의 S3 버킷에 접근하려면:
+          (1) 계정 A의 사용자에게 S3 접근 자격증명 정책 부여 <strong>AND</strong>
+          (2) 계정 B의 S3 버킷 정책에서 계정 A의 사용자를 Principal로 허용해야 합니다.
+          한쪽만 설정하면 접근이 거부됩니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== 섹션 4: Condition 키 활용 ==================== -->
+    <section class="content-section" id="condition-keys">
+      <h2>4. Condition 키 활용</h2>
+
+      <p>
+        Condition은 정책의 가장 강력한 기능입니다.
+        <strong>"언제", "어디서", "어떤 조건에서"</strong> 정책을 적용할지 세밀하게 제어할 수 있습니다.
+      </p>
+
+      <h3>4.1 Condition 기본 구조</h3>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>"Condition": {
+  "조건연산자": {
+    "조건키": "조건값"
+  }
+}
+
+// 여러 조건: 같은 연산자 내의 키들은 AND 관계
+"Condition": {
+  "StringEquals": {
+    "aws:RequestedRegion": "ap-northeast-2",
+    "aws:PrincipalTag/Department": "engineering"
+  }
+}
+
+// 서로 다른 연산자 간에도 AND 관계
+"Condition": {
+  "IpAddress": {
+    "aws:SourceIp": "203.0.113.0/24"
+  },
+  "Bool": {
+    "aws:MultiFactorAuthPresent": "true"
+  }
+}</code></pre>
+      </div>
+
+      <h3>4.2 주요 조건 연산자</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>연산자</th>
+            <th>데이터 유형</th>
+            <th>설명</th>
+            <th>예시</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>StringEquals</strong></td>
+            <td>문자열</td>
+            <td>정확히 일치</td>
+            <td>태그 값, 리전 이름</td>
+          </tr>
+          <tr>
+            <td><strong>StringLike</strong></td>
+            <td>문자열</td>
+            <td>와일드카드(*,?) 지원</td>
+            <td>ARN 패턴 매칭</td>
+          </tr>
+          <tr>
+            <td><strong>NumericLessThan</strong></td>
+            <td>숫자</td>
+            <td>숫자 비교</td>
+            <td>요청 크기 제한</td>
+          </tr>
+          <tr>
+            <td><strong>DateGreaterThan</strong></td>
+            <td>날짜</td>
+            <td>날짜/시간 비교</td>
+            <td>시간 기반 접근 제어</td>
+          </tr>
+          <tr>
+            <td><strong>Bool</strong></td>
+            <td>불리언</td>
+            <td>true/false</td>
+            <td>MFA 인증 여부</td>
+          </tr>
+          <tr>
+            <td><strong>IpAddress</strong></td>
+            <td>IP 주소</td>
+            <td>CIDR 기반 IP 매칭</td>
+            <td>소스 IP 제한</td>
+          </tr>
+          <tr>
+            <td><strong>ArnLike</strong></td>
+            <td>ARN</td>
+            <td>ARN 패턴 매칭</td>
+            <td>특정 역할에서 접근</td>
+          </tr>
+          <tr>
+            <td><strong>Null</strong></td>
+            <td>키 존재 여부</td>
+            <td>조건 키의 존재 여부</td>
+            <td>MFA 키가 존재하는지</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>4.3 자주 사용되는 전역 조건 키</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>조건 키</th>
+            <th>용도</th>
+            <th>사용 예</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>aws:SourceIp</code></td>
+            <td>요청 출발 IP 확인</td>
+            <td>회사 VPN IP에서만 콘솔 접근 허용</td>
+          </tr>
+          <tr>
+            <td><code>aws:MultiFactorAuthPresent</code></td>
+            <td>MFA 인증 여부</td>
+            <td>MFA 없이는 민감 작업 거부</td>
+          </tr>
+          <tr>
+            <td><code>aws:MultiFactorAuthAge</code></td>
+            <td>MFA 인증 후 경과 시간(초)</td>
+            <td>MFA 인증 후 1시간 이내만 허용</td>
+          </tr>
+          <tr>
+            <td><code>aws:PrincipalTag/키</code></td>
+            <td>주체에 부착된 태그</td>
+            <td>Department:engineering 태그가 있는 사용자만</td>
+          </tr>
+          <tr>
+            <td><code>aws:ResourceTag/키</code></td>
+            <td>대상 리소스의 태그</td>
+            <td>Environment:dev 태그인 리소스만 접근</td>
+          </tr>
+          <tr>
+            <td><code>aws:RequestedRegion</code></td>
+            <td>요청 대상 리전</td>
+            <td>서울 리전에서만 리소스 생성 허용</td>
+          </tr>
+          <tr>
+            <td><code>aws:CurrentTime</code></td>
+            <td>현재 시각</td>
+            <td>업무시간(09:00~18:00)에만 접근 허용</td>
+          </tr>
+          <tr>
+            <td><code>aws:SecureTransport</code></td>
+            <td>HTTPS 사용 여부</td>
+            <td>HTTPS 요청만 허용 (S3)</td>
+          </tr>
+          <tr>
+            <td><code>aws:PrincipalOrgID</code></td>
+            <td>조직 ID</td>
+            <td>같은 Organization의 계정만 접근</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ==================== 섹션 5: 실용적 정책 예제 모음 ==================== -->
+    <section class="content-section" id="practical-examples">
+      <h2>5. 실용적 정책 예제 모음</h2>
+
+      <p>
+        ShopEasy에 바로 적용할 수 있는 실용적인 정책 예제를 유형별로 살펴보겠습니다.
+      </p>
+
+      <h3>5.1 IP 기반 접근 제한</h3>
+      <p>회사 IP에서만 AWS 콘솔과 API에 접근할 수 있도록 제한합니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyAccessFromNonCompanyIP",
+      "Effect": "Deny",
+      "Action": "*",
+      "Resource": "*",
+      "Condition": {
+        "NotIpAddress": {
+          "aws:SourceIp": [
+            "203.0.113.0/24",
+            "198.51.100.0/24"
+          ]
+        },
+        "Bool": {
+          "aws:ViaAWSService": "false"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">aws:ViaAWSService 조건이 필요한 이유</div>
+        <p>
+          <code>aws:ViaAWSService: false</code> 조건이 없으면, AWS 서비스가 내부적으로 API를 호출할 때도
+          IP 제한이 적용되어 서비스가 작동하지 않을 수 있습니다.
+          예를 들어, CloudFormation이 EC2를 생성할 때의 내부 호출이 차단될 수 있습니다.
+        </p>
+      </div>
+
+      <h3>5.2 MFA 강제 정책</h3>
+      <p>MFA를 설정하지 않은 사용자는 MFA 설정 외의 모든 작업이 거부됩니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowMFAManagement",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateVirtualMFADevice",
+        "iam:EnableMFADevice",
+        "iam:ResyncMFADevice",
+        "iam:ListMFADevices",
+        "iam:GetUser",
+        "iam:ChangePassword"
+      ],
+      "Resource": [
+        "arn:aws:iam::*:mfa/${aws:username}",
+        "arn:aws:iam::*:user/${aws:username}"
+      ]
+    },
+    {
+      "Sid": "DenyAllExceptMFAWithoutMFA",
+      "Effect": "Deny",
+      "NotAction": [
+        "iam:CreateVirtualMFADevice",
+        "iam:EnableMFADevice",
+        "iam:ResyncMFADevice",
+        "iam:ListMFADevices",
+        "iam:GetUser",
+        "iam:ChangePassword",
+        "sts:GetSessionToken"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "BoolIfExists": {
+          "aws:MultiFactorAuthPresent": "false"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="info-box concept">
+        <div class="info-box-title">이 정책의 동작 원리</div>
+        <p>
+          <strong>첫 번째 Statement</strong>: MFA 관련 작업은 항상 허용 (MFA를 설정할 수 있도록)<br>
+          <strong>두 번째 Statement</strong>: MFA 인증 없이는 MFA 관련 작업 외 모든 것을 거부<br>
+          결과: MFA를 설정하지 않은 사용자는 로그인 후 MFA 설정만 할 수 있고, 다른 작업은 불가합니다.
+        </p>
+      </div>
+
+      <h3>5.3 태그 기반 접근 제어 (ABAC)</h3>
+      <p>리소스와 사용자의 태그를 비교하여 접근을 제어합니다. 부서별로 자기 리소스만 관리할 수 있습니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowEC2ActionsOnMatchingTag",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:StartInstances",
+        "ec2:StopInstances",
+        "ec2:RebootInstances"
+      ],
+      "Resource": "arn:aws:ec2:ap-northeast-2:123456789012:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Department": "${aws:PrincipalTag/Department}"
+        }
+      }
+    },
+    {
+      "Sid": "AllowDescribeAll",
+      "Effect": "Allow",
+      "Action": "ec2:Describe*",
+      "Resource": "*"
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">ABAC (Attribute-Based Access Control)의 장점</div>
+        <p>
+          태그 기반 제어(ABAC)를 사용하면 <strong>새로운 리소스나 사용자가 추가될 때 정책을 수정할 필요가 없습니다</strong>.
+          올바른 태그만 부착하면 자동으로 접근 제어가 적용됩니다.
+          RBAC(역할 기반)보다 확장성이 좋고, 정책 수를 줄일 수 있습니다.
+        </p>
+      </div>
+
+      <h3>5.4 시간 기반 접근 제어</h3>
+      <p>업무시간(평일 09:00~18:00 KST)에만 특정 작업을 허용합니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowDuringBusinessHours",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:RunInstances",
+        "ec2:TerminateInstances",
+        "rds:CreateDBInstance",
+        "rds:DeleteDBInstance"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "DateGreaterThan": {
+          "aws:CurrentTime": "2024-01-01T00:00:00Z"
+        },
+        "DateLessThan": {
+          "aws:CurrentTime": "2025-12-31T23:59:59Z"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="info-box warning">
+        <div class="info-box-title">시간 기반 정책의 한계</div>
+        <p>
+          <code>aws:CurrentTime</code>은 UTC 기준이므로 한국 시간(KST, UTC+9)으로 변환해야 합니다.
+          업무시간 09:00~18:00 KST = 00:00~09:00 UTC입니다.
+          또한 업무일(평일/주말) 구분은 Condition만으로는 불가능하므로,
+          Lambda로 자동화하거나 SCP와 결합하여 사용합니다.
+        </p>
+      </div>
+
+      <h3>5.5 S3 HTTPS 강제 정책 (리소스 기반)</h3>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyNonSSLRequests",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::shopeasy-product-images",
+        "arn:aws:s3:::shopeasy-product-images/*"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "false"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>5.6 리전 제한 정책</h3>
+      <p>서울 리전(ap-northeast-2)에서만 리소스 생성을 허용합니다.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="lang">json</span>
+          <button class="copy-btn">복사</button>
+        </div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyNonSeoulRegion",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:RunInstances",
+        "rds:CreateDBInstance",
+        "s3:CreateBucket",
+        "lambda:CreateFunction"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": [
+            "ap-northeast-2",
+            "us-east-1"
+          ]
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">us-east-1을 포함하는 이유</div>
+        <p>
+          IAM, CloudFront, Route 53 등 일부 글로벌 서비스는 us-east-1에서 API를 처리합니다.
+          us-east-1을 차단하면 이런 글로벌 서비스가 작동하지 않을 수 있으므로 주의가 필요합니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- ==================== 섹션 6: 실습 - 정책 시뮬레이터 ==================== -->
+    <section class="content-section" id="lab-simulator">
+      <h2>6. 실습: 정책 시뮬레이터로 검증</h2>
+
+      <p>
+        작성한 정책이 의도대로 동작하는지 <strong>실제 리소스에 적용하기 전에</strong> 검증하는 것이 매우 중요합니다.
+        AWS는 두 가지 검증 도구를 제공합니다.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>도구</th>
+            <th>용도</th>
+            <th>접근 방법</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>IAM Policy Simulator</strong></td>
+            <td>특정 사용자/역할이 특정 API를 호출할 수 있는지 시뮬레이션</td>
+            <td>콘솔: IAM &rarr; Policy Simulator 또는 policysim.aws.amazon.com</td>
+          </tr>
+          <tr>
+            <td><strong>IAM Access Analyzer</strong></td>
+            <td>정책 검증, 외부 접근 분석, 미사용 접근 탐지</td>
+            <td>콘솔: IAM &rarr; Access Analyzer</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="lab-section">
+        <div class="lab-title">실습: IAM 정책 시뮬레이터 활용</div>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">IAM 정책 시뮬레이터 접속</div>
+            <p>
+              AWS 콘솔에 로그인한 후, 브라우저에서 <code>https://policysim.aws.amazon.com</code>에 접속합니다.
+              또는 IAM 콘솔 왼쪽 메뉴에서 "Policy Simulator"를 클릭합니다.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-title">테스트할 사용자/역할 선택</div>
+            <p>
+              왼쪽 패널에서 테스트할 IAM 사용자 또는 역할을 선택합니다.
+              현재 ShopEasy에서 사용 중인 사용자를 선택하세요.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-title">서비스와 액션 선택</div>
+            <p>
+              "Service" 드롭다운에서 <strong>Amazon S3</strong>를 선택합니다.
+              "Actions"에서 다음 액션들을 선택합니다:
+            </p>
+            <ul>
+              <li><code>s3:GetObject</code></li>
+              <li><code>s3:PutObject</code></li>
+              <li><code>s3:DeleteObject</code></li>
+              <li><code>s3:ListBucket</code></li>
+            </ul>
+          </div>
+          <div class="step">
+            <div class="step-title">시뮬레이션 실행</div>
+            <p>
+              "Run Simulation" 버튼을 클릭합니다.
+              각 액션에 대해 <strong>allowed</strong> 또는 <strong>denied</strong> 결과가 표시됩니다.
+              denied된 경우, 어떤 정책이 거부 원인인지 확인합니다.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-title">커스텀 정책 테스트</div>
+            <p>
+              "Additional Policies" 탭에서 이번 챕터에서 작성한 정책 JSON을 붙여넣어 테스트합니다.
+              MFA 강제 정책의 경우, Simulation Settings에서 "MFA Authenticated: Yes/No"를 변경하면서
+              결과가 달라지는지 확인합니다.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-title">결과 분석 및 정책 수정</div>
+            <p>
+              시뮬레이션 결과에서 의도치 않은 허용이나 거부가 있으면 정책을 수정합니다.
+              특히 다음 사항을 확인하세요:
+            </p>
+            <ul>
+              <li><code>s3:DeleteObject</code>가 불필요하게 허용되어 있지 않은지</li>
+              <li>다른 서비스(EC2, RDS)에 대한 접근이 과도하지 않은지</li>
+              <li>Resource가 <code>*</code>로 되어 있는 정책이 있는지</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="lab-section">
+        <div class="lab-title">실습: IAM Access Analyzer로 정책 검증</div>
+        <div class="steps">
+          <div class="step">
+            <div class="step-title">Access Analyzer 활성화</div>
+            <p>
+              IAM 콘솔 &rarr; 왼쪽 메뉴 "Access Analyzer" &rarr; "Analyzer 생성"을 클릭합니다.
+              분석기 이름: <code>shopeasy-analyzer</code>, 유형: 계정 분석기를 선택하고 생성합니다.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-title">외부 접근 결과 확인</div>
+            <p>
+              분석기가 생성되면 "결과(Findings)" 탭에서 외부에서 접근 가능한 리소스 목록을 확인합니다.
+              S3 버킷이나 IAM 역할 중 외부 계정에서 접근 가능한 것이 있는지 확인합니다.
+            </p>
+          </div>
+          <div class="step">
+            <div class="step-title">정책 검증 (Policy Validation)</div>
+            <p>
+              "Policy Validation" 기능을 사용하여 작성한 정책의 문법 오류나 보안 경고를 확인합니다.
+              IAM 콘솔에서 정책을 편집할 때 자동으로 검증 결과가 표시됩니다.
+              WARNING, ERROR, SUGGESTION 레벨의 피드백을 확인하고 수정합니다.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">정책 작성 모범 사례 요약</div>
+        <p>
+          1. <strong>항상 최소 권한</strong>으로 시작하여 필요시 추가 (넓게 주고 좁히지 말 것)<br>
+          2. <strong>Resource에 구체적 ARN</strong>을 지정 (<code>"Resource": "*"</code> 지양)<br>
+          3. <strong>Condition</strong>을 적극 활용 (IP, MFA, 태그, 리전 등)<br>
+          4. <strong>Sid</strong>에 의미 있는 이름 부여 (나중에 어떤 규칙인지 파악 용이)<br>
+          5. 적용 전 반드시 <strong>Policy Simulator</strong>로 검증<br>
+          6. <strong>Access Analyzer</strong>로 정기적으로 과도한 권한 탐지 및 제거
+        </p>
+      </div>
+    </section>
+
+    <div class="chapter-nav">
+      <a href="02-security-services-map.html" class="prev">이전: AWS 보안 서비스 전체 맵 & 위협 분석</a>
+      <a href="04-iam-roles-sts.html" class="next">다음: IAM 역할 & 임시 자격증명</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/03-iam-policy-deep-dive.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>

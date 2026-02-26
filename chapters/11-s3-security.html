@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/11-s3-security.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+<!-- Added by HTTrack --><meta http-equiv="content-type" content="text/html;charset=utf-8" /><!-- /Added by HTTrack -->
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>S3 보안 - AWS 클라우드 보안</title>
+  <link href="../../cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet">
+  <link rel="stylesheet" href="../assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="../index-2.html" class="header-logo">
+      <span class="aws-icon">&#x1F6E1; AWS Security</span>
+      <span>클라우드 보안 강의</span>
+    </a>
+  </div>
+</header>
+
+<div class="page-layout">
+  <nav class="sidebar">
+    <ul class="sidebar-nav">
+      <li class="sidebar-section">S3 보안</li>
+      <li><a href="#s3-threats">S3 보안 위협</a></li>
+      <li><a href="#block-public-access">퍼블릭 액세스 차단</a></li>
+      <li><a href="#bucket-policy-acl">버킷 정책 & ACL</a></li>
+      <li><a href="#s3-encryption">S3 기본 암호화</a></li>
+      <li><a href="#access-points">S3 액세스 포인트</a></li>
+      <li><a href="#object-lock">Object Lock & 버전 관리</a></li>
+      <li><a href="#presigned-url">Pre-signed URL 보안</a></li>
+      <li><a href="#lab-s3-security">실습: S3 보안 강화</a></li>
+    </ul>
+  </nav>
+
+  <main class="main-content">
+    <div class="chapter-header">
+      <span class="chapter-num">Chapter 11</span>
+      <h1>S3 보안</h1>
+      <div class="objectives">
+        <h3>학습 목표</h3>
+        <ul>
+          <li>S3의 주요 보안 위협과 실제 데이터 유출 사례를 이해할 수 있다</li>
+          <li>Block Public Access 4가지 설정을 구분하고 적용할 수 있다</li>
+          <li>버킷 정책을 작성하여 세분화된 접근 제어를 구현할 수 있다</li>
+          <li>SSE-S3, SSE-KMS, SSE-C 암호화 방식의 차이를 설명하고 적절히 선택할 수 있다</li>
+          <li>Object Lock과 버전 관리를 활용하여 데이터를 보호할 수 있다</li>
+          <li>Pre-signed URL의 보안 고려사항을 이해하고 안전하게 사용할 수 있다</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- 섹션 1: S3 보안 위협 -->
+    <section class="content-section" id="s3-threats">
+      <h2>1. S3 보안 위협</h2>
+
+      <p>
+        Amazon S3는 거의 모든 AWS 아키텍처에서 사용되는 핵심 스토리지 서비스입니다.
+        그만큼 잘못된 설정으로 인한 데이터 유출 사고가 빈번하게 발생하고 있습니다.
+        ShopEasy 이커머스 서비스에서 S3는 상품 이미지, 주문 첨부파일, 백업 데이터 등을 저장하므로
+        보안 설정이 매우 중요합니다.
+      </p>
+
+      <h3>실제 S3 데이터 유출 사례</h3>
+
+      <div class="info-box danger">
+        <div class="info-box-title">사례 1: Twitch (2021년)</div>
+        <p>
+          잘못 구성된 S3 버킷을 통해 Twitch의 전체 소스 코드, 크리에이터 수익 데이터,
+          내부 도구가 유출되었습니다. <strong>125GB</strong>에 달하는 데이터가 공개되어
+          회사의 신뢰도에 심각한 타격을 입었습니다.
+        </p>
+      </div>
+
+      <div class="info-box danger">
+        <div class="info-box-title">사례 2: Accenture (2017년)</div>
+        <p>
+          4개의 S3 버킷이 퍼블릭으로 노출되어 API 키, 비밀번호, 인증서 등 민감 데이터가 유출되었습니다.
+          단순히 S3 버킷의 퍼블릭 액세스를 차단하지 않은 것이 원인이었습니다.
+        </p>
+      </div>
+
+      <h3>ShopEasy S3 버킷 현황</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>버킷 이름</th>
+            <th>용도</th>
+            <th>민감도</th>
+            <th>현재 상태</th>
+            <th>필요 조치</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>shopeasy-product-images</code></td>
+            <td>상품 이미지</td>
+            <td style="color: var(--success);">낮음</td>
+            <td>퍼블릭 읽기 허용</td>
+            <td>CloudFront OAC로 전환</td>
+          </tr>
+          <tr>
+            <td><code>shopeasy-order-attachments</code></td>
+            <td>주문 첨부파일</td>
+            <td style="color: var(--danger); font-weight: 700;">높음</td>
+            <td>퍼블릭 차단 미설정</td>
+            <td>퍼블릭 차단 + SSE-KMS 암호화</td>
+          </tr>
+          <tr>
+            <td><code>shopeasy-backups</code></td>
+            <td>DB 백업</td>
+            <td style="color: var(--danger); font-weight: 700;">매우 높음</td>
+            <td>암호화 미적용</td>
+            <td>SSE-KMS + 버전 관리 + Object Lock</td>
+          </tr>
+          <tr>
+            <td><code>shopeasy-logs</code></td>
+            <td>서버 로그</td>
+            <td style="color: var(--warning); font-weight: 700;">중간</td>
+            <td>기본 설정</td>
+            <td>SSE-S3 + 수명 주기 정책</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">S3 보안의 핵심 원칙</div>
+        <p>
+          S3 보안은 세 가지 축으로 구성됩니다:<br>
+          <strong>1. 접근 제어</strong> - 누가 버킷/객체에 접근할 수 있는가? (Block Public Access, 버킷 정책, IAM)<br>
+          <strong>2. 데이터 보호</strong> - 데이터가 유출되어도 읽을 수 없는가? (암호화, 버전 관리)<br>
+          <strong>3. 감사</strong> - 누가 언제 무엇을 했는가? (S3 서버 액세스 로깅, CloudTrail)
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 2: 퍼블릭 액세스 차단 -->
+    <section class="content-section" id="block-public-access">
+      <h2>2. S3 퍼블릭 액세스 차단</h2>
+
+      <p>
+        S3 Block Public Access는 버킷과 객체가 실수로 퍼블릭에 노출되는 것을 방지하는 안전장치입니다.
+        <strong>계정 수준</strong>과 <strong>버킷 수준</strong> 모두에서 설정할 수 있으며,
+        계정 수준 설정이 버킷 수준보다 우선합니다.
+      </p>
+
+      <h3>4가지 Block Public Access 설정</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>설정</th>
+            <th>차단 대상</th>
+            <th>설명</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>BlockPublicAcls</strong></td>
+            <td>새로운 퍼블릭 ACL</td>
+            <td>퍼블릭 ACL을 포함하는 PUT 요청을 차단합니다. 기존 ACL은 영향 없습니다.</td>
+          </tr>
+          <tr>
+            <td><strong>IgnorePublicAcls</strong></td>
+            <td>기존 퍼블릭 ACL</td>
+            <td>기존에 설정된 퍼블릭 ACL을 무시합니다. ACL 자체는 삭제되지 않지만 효력을 잃습니다.</td>
+          </tr>
+          <tr>
+            <td><strong>BlockPublicPolicy</strong></td>
+            <td>새로운 퍼블릭 버킷 정책</td>
+            <td>퍼블릭 접근을 허용하는 버킷 정책의 저장을 차단합니다.</td>
+          </tr>
+          <tr>
+            <td><strong>RestrictPublicBuckets</strong></td>
+            <td>기존 퍼블릭 정책의 교차 계정 접근</td>
+            <td>퍼블릭 정책이 있는 버킷에 대해 인증된 AWS 사용자만 접근할 수 있도록 제한합니다.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유로 이해하기</div>
+        <p>
+          S3 버킷을 회사 사무실로 비유하면:<br>
+          <strong>BlockPublicAcls</strong> = 새로운 외부인 출입증 발급을 중단<br>
+          <strong>IgnorePublicAcls</strong> = 기존 외부인 출입증을 모두 무효화<br>
+          <strong>BlockPublicPolicy</strong> = "외부인 자유 출입" 정책 게시를 차단<br>
+          <strong>RestrictPublicBuckets</strong> = 이미 게시된 "외부인 자유 출입" 정책이 있어도 실제로는 사원증이 있는 사람만 입장
+        </p>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">모범 사례: 4가지 모두 활성화</div>
+        <p>
+          특별한 이유가 없는 한 4가지 설정을 <strong>모두 활성화</strong>하는 것이 권장됩니다.
+          특히 <strong>계정 수준</strong>에서 Block Public Access를 활성화하면
+          해당 계정의 모든 S3 버킷에 대해 퍼블릭 접근이 원천 차단됩니다.
+          정적 웹사이트 호스팅이 필요한 경우에는 CloudFront + OAC를 사용하여
+          S3 버킷을 퍼블릭으로 열지 않고도 콘텐츠를 제공할 수 있습니다.
+        </p>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+        <pre><code># 계정 수준 Block Public Access 활성화
+aws s3control put-public-access-block \
+  --account-id 123456789012 \
+  --public-access-block-configuration \
+    BlockPublicAcls=true,\
+    IgnorePublicAcls=true,\
+    BlockPublicPolicy=true,\
+    RestrictPublicBuckets=true
+
+# 버킷 수준 Block Public Access 활성화
+aws s3api put-public-access-block \
+  --bucket shopeasy-order-attachments \
+  --public-access-block-configuration \
+    BlockPublicAcls=true,\
+    IgnorePublicAcls=true,\
+    BlockPublicPolicy=true,\
+    RestrictPublicBuckets=true
+
+# 설정 확인
+aws s3api get-public-access-block \
+  --bucket shopeasy-order-attachments</code></pre>
+      </div>
+    </section>
+
+    <!-- 섹션 3: 버킷 정책 & ACL -->
+    <section class="content-section" id="bucket-policy-acl">
+      <h2>3. 버킷 정책 & ACL</h2>
+
+      <p>
+        S3 접근 제어의 핵심은 <strong>버킷 정책(Bucket Policy)</strong>입니다.
+        ACL(Access Control List)은 레거시 방식으로, AWS는 새로운 버킷에 대해
+        ACL 비활성화를 기본값으로 설정하고 있습니다.
+      </p>
+
+      <h3>버킷 정책 예제: HTTPS 강제</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyNonSSLRequests",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::shopeasy-order-attachments",
+        "arn:aws:s3:::shopeasy-order-attachments/*"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "false"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>버킷 정책 예제: 특정 VPC 엔드포인트에서만 접근 허용</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "RestrictToVPCEndpoint",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::shopeasy-order-attachments",
+        "arn:aws:s3:::shopeasy-order-attachments/*"
+      ],
+      "Condition": {
+        "StringNotEquals": {
+          "aws:sourceVpce": "vpce-0abc123def456"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>버킷 정책 예제: 특정 IAM 역할만 접근 허용</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowOnlyAppServerRole",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:role/ShopEasy-EC2-AppRole"
+      },
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::shopeasy-order-attachments",
+        "arn:aws:s3:::shopeasy-order-attachments/*"
+      ]
+    },
+    {
+      "Sid": "DenyAllOthers",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::shopeasy-order-attachments",
+        "arn:aws:s3:::shopeasy-order-attachments/*"
+      ],
+      "Condition": {
+        "StringNotLike": {
+          "aws:PrincipalArn": [
+            "arn:aws:iam::123456789012:role/ShopEasy-EC2-AppRole",
+            "arn:aws:iam::123456789012:root"
+          ]
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+
+      <h3>ACL은 왜 비권장인가?</h3>
+
+      <div class="info-box warning">
+        <div class="info-box-title">ACL 사용을 피해야 하는 이유</div>
+        <p>
+          AWS는 2023년 4월부터 새로 생성되는 S3 버킷의 <strong>ACL을 기본적으로 비활성화</strong>합니다.
+          ACL은 다음과 같은 한계가 있습니다:<br>
+          - ACL은 최대 100개의 권한 부여(grant)만 가능<br>
+          - 조건(Condition)을 사용한 세분화된 제어 불가<br>
+          - 관리가 복잡하고 실수로 퍼블릭 노출 위험이 높음<br>
+          - 버킷 정책과 ACL이 동시에 존재하면 혼란 초래<br><br>
+          <strong>버킷 정책 + IAM 정책</strong>으로 모든 접근 제어를 구현하는 것이 모범 사례입니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 4: S3 기본 암호화 -->
+    <section class="content-section" id="s3-encryption">
+      <h2>4. S3 기본 암호화</h2>
+
+      <p>
+        2023년 1월부터 Amazon S3는 새로 업로드되는 모든 객체에 <strong>SSE-S3 암호화를 기본 적용</strong>합니다.
+        하지만 보안 요구사항에 따라 더 강력한 암호화 방식을 선택할 수 있습니다.
+      </p>
+
+      <h3>S3 서버 측 암호화 방식 비교</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>항목</th>
+            <th>SSE-S3</th>
+            <th>SSE-KMS</th>
+            <th>SSE-C</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>키 관리</strong></td>
+            <td>S3가 관리</td>
+            <td>KMS가 관리</td>
+            <td>고객이 직접 관리</td>
+          </tr>
+          <tr>
+            <td><strong>암호화 알고리즘</strong></td>
+            <td>AES-256</td>
+            <td>AES-256</td>
+            <td>AES-256</td>
+          </tr>
+          <tr>
+            <td><strong>키 접근 제어</strong></td>
+            <td>불가 (S3 내부)</td>
+            <td>KMS 키 정책으로 제어</td>
+            <td>고객 책임</td>
+          </tr>
+          <tr>
+            <td><strong>감사 추적</strong></td>
+            <td>S3 액세스 로그만</td>
+            <td>CloudTrail에 키 사용 기록</td>
+            <td>고객 책임</td>
+          </tr>
+          <tr>
+            <td><strong>키 로테이션</strong></td>
+            <td>S3가 자동</td>
+            <td>자동/수동 선택</td>
+            <td>고객이 직접</td>
+          </tr>
+          <tr>
+            <td><strong>추가 비용</strong></td>
+            <td>없음</td>
+            <td>KMS API 호출 비용</td>
+            <td>없음</td>
+          </tr>
+          <tr>
+            <td><strong>헤더</strong></td>
+            <td><code>x-amz-server-side-encryption: AES256</code></td>
+            <td><code>x-amz-server-side-encryption: aws:kms</code></td>
+            <td><code>x-amz-server-side-encryption-customer-*</code></td>
+          </tr>
+          <tr>
+            <td><strong>ShopEasy 적용</strong></td>
+            <td>상품 이미지, 일반 로그</td>
+            <td>주문 첨부파일, DB 백업</td>
+            <td>특수 규정 준수 시</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box concept">
+        <div class="info-box-title">SSE-KMS의 장점</div>
+        <p>
+          SSE-KMS는 SSE-S3에 비해 다음과 같은 추가 보안 이점을 제공합니다:<br>
+          <strong>1. 키 접근 제어</strong>: 키 정책과 IAM 정책으로 누가 데이터를 복호화할 수 있는지 제어<br>
+          <strong>2. CloudTrail 감사</strong>: 모든 키 사용(암호화/복호화)이 CloudTrail에 기록됨<br>
+          <strong>3. 키 로테이션</strong>: 자동/수동 로테이션으로 키 관리 유연성 확보<br>
+          <strong>4. 교차 계정 제어</strong>: 키 정책으로 다른 계정의 접근을 세밀하게 제어 가능
+        </p>
+      </div>
+
+      <h3>버킷 기본 암호화 설정</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+        <pre><code># SSE-S3 기본 암호화 설정 (기본값)
+aws s3api put-bucket-encryption \
+  --bucket shopeasy-product-images \
+  --server-side-encryption-configuration '{
+    "Rules": [{
+      "ApplyServerSideEncryptionByDefault": {
+        "SSEAlgorithm": "AES256"
+      },
+      "BucketKeyEnabled": true
+    }]
+  }'
+
+# SSE-KMS 기본 암호화 설정 (민감 데이터용)
+aws s3api put-bucket-encryption \
+  --bucket shopeasy-order-attachments \
+  --server-side-encryption-configuration '{
+    "Rules": [{
+      "ApplyServerSideEncryptionByDefault": {
+        "SSEAlgorithm": "aws:kms",
+        "KMSMasterKeyID": "alias/shopeasy-data-key"
+      },
+      "BucketKeyEnabled": true
+    }]
+  }'</code></pre>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">S3 Bucket Key로 비용 절감</div>
+        <p>
+          <code>BucketKeyEnabled: true</code>를 설정하면 S3 버킷 키가 활성화됩니다.
+          S3 버킷 키는 KMS에서 데이터 키를 받아 버킷 내에서 재사용하므로
+          KMS API 호출 횟수가 <strong>최대 99%</strong> 감소합니다.
+          SSE-KMS를 사용할 때는 반드시 버킷 키를 활성화하여 비용을 절감하세요.
+        </p>
+      </div>
+
+      <h3>SSE-KMS 암호화 강제 버킷 정책</h3>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">json</span><button class="copy-btn">복사</button></div>
+        <pre><code>{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyUnencryptedUploads",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::shopeasy-order-attachments/*",
+      "Condition": {
+        "StringNotEquals": {
+          "s3:x-amz-server-side-encryption": "aws:kms"
+        }
+      }
+    },
+    {
+      "Sid": "DenyWrongKMSKey",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::shopeasy-order-attachments/*",
+      "Condition": {
+        "StringNotEquals": {
+          "s3:x-amz-server-side-encryption-aws-kms-key-id": "arn:aws:kms:ap-northeast-2:123456789012:key/KEY_ID"
+        }
+      }
+    }
+  ]
+}</code></pre>
+      </div>
+    </section>
+
+    <!-- 섹션 5: S3 액세스 포인트 -->
+    <section class="content-section" id="access-points">
+      <h2>5. S3 액세스 포인트</h2>
+
+      <p>
+        S3 액세스 포인트는 버킷에 대한 접근을 <strong>용도별로 분리</strong>하여 관리하는 기능입니다.
+        하나의 버킷에 복잡한 정책을 모두 담는 대신, 액세스 포인트별로 별도의 정책을 설정할 수 있습니다.
+      </p>
+
+      <div class="info-box analogy">
+        <div class="info-box-title">비유로 이해하기</div>
+        <p>
+          S3 버킷이 대형 창고라면, 액세스 포인트는 창고의 <strong>전용 출입구</strong>입니다.
+          정문은 직원용(앱 서버), 후문은 배송업체용(외부 파트너), 비상구는 감사용(보안 팀)으로
+          각각 다른 출입 규칙을 적용하는 것과 같습니다.
+        </p>
+      </div>
+
+      <h3>ShopEasy 액세스 포인트 설계</h3>
+
+      <div class="diagram">
+        <div class="diagram-title">ShopEasy S3 액세스 포인트 아키텍처</div>
+        <div class="diagram-row">
+          <div class="diagram-col">
+            <div class="diagram-box compute">
+              <div class="box-title">EC2 앱 서버</div>
+              <div class="box-sub">읽기/쓰기</div>
+            </div>
+            <div class="diagram-arrow down">&darr;</div>
+            <div class="diagram-box security">
+              <div class="box-title">AP: app-server</div>
+              <div class="box-sub">VPC 전용, Get/Put</div>
+            </div>
+          </div>
+          <div class="diagram-col">
+            <div class="diagram-box serverless">
+              <div class="box-title">Lambda 분석</div>
+              <div class="box-sub">읽기 전용</div>
+            </div>
+            <div class="diagram-arrow down">&darr;</div>
+            <div class="diagram-box security">
+              <div class="box-title">AP: analytics</div>
+              <div class="box-sub">GetObject만 허용</div>
+            </div>
+          </div>
+          <div class="diagram-col">
+            <div class="diagram-box monitor">
+              <div class="box-title">보안 감사팀</div>
+              <div class="box-sub">목록 조회만</div>
+            </div>
+            <div class="diagram-arrow down">&darr;</div>
+            <div class="diagram-box security">
+              <div class="box-title">AP: audit</div>
+              <div class="box-sub">ListBucket만 허용</div>
+            </div>
+          </div>
+        </div>
+        <div class="diagram-row" style="margin-top: 0.75rem;">
+          <div class="diagram-arrow down">&darr;</div>
+        </div>
+        <div class="diagram-row">
+          <div class="diagram-box storage">
+            <div class="box-title">shopeasy-order-attachments</div>
+            <div class="box-sub">S3 버킷 (단일)</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+        <pre><code># VPC 전용 액세스 포인트 생성 (앱 서버용)
+aws s3control create-access-point \
+  --account-id 123456789012 \
+  --name shopeasy-app-server \
+  --bucket shopeasy-order-attachments \
+  --vpc-configuration VpcId=vpc-0abc123def456
+
+# 인터넷 액세스 포인트 생성 (분석용, 읽기 전용)
+aws s3control create-access-point \
+  --account-id 123456789012 \
+  --name shopeasy-analytics \
+  --bucket shopeasy-order-attachments \
+  --public-access-block-configuration \
+    BlockPublicAcls=true,\
+    IgnorePublicAcls=true,\
+    BlockPublicPolicy=true,\
+    RestrictPublicBuckets=true</code></pre>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">액세스 포인트의 장점</div>
+        <p>
+          - 버킷 정책의 크기 제한(20KB)을 우회할 수 있습니다<br>
+          - 용도별 접근 제어가 분리되어 관리가 편리합니다<br>
+          - VPC 전용 액세스 포인트로 인터넷 접근을 원천 차단할 수 있습니다<br>
+          - 버킷 정책 변경 없이 액세스 포인트 정책만 수정하면 됩니다
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 6: Object Lock & 버전 관리 -->
+    <section class="content-section" id="object-lock">
+      <h2>6. S3 Object Lock & 버전 관리</h2>
+
+      <p>
+        S3 Object Lock은 객체의 삭제나 덮어쓰기를 일정 기간 또는 영구적으로 방지하는 기능입니다.
+        랜섬웨어 공격이나 실수로 인한 데이터 삭제로부터 중요 데이터를 보호합니다.
+        Object Lock을 사용하려면 <strong>버전 관리</strong>가 반드시 활성화되어야 합니다.
+      </p>
+
+      <h3>버전 관리 (Versioning)</h3>
+
+      <p>
+        버전 관리를 활성화하면 객체를 덮어쓰거나 삭제해도 이전 버전이 보존됩니다.
+        실수로 파일을 삭제해도 이전 버전에서 복구할 수 있어 데이터 보호에 필수적입니다.
+      </p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+        <pre><code># 버전 관리 활성화
+aws s3api put-bucket-versioning \
+  --bucket shopeasy-backups \
+  --versioning-configuration Status=Enabled
+
+# 버전 관리 상태 확인
+aws s3api get-bucket-versioning \
+  --bucket shopeasy-backups
+
+# 객체의 모든 버전 조회
+aws s3api list-object-versions \
+  --bucket shopeasy-backups \
+  --prefix db-backup/ \
+  --max-keys 10</code></pre>
+      </div>
+
+      <h3>Object Lock 모드</h3>
+
+      <table>
+        <thead>
+          <tr>
+            <th>모드</th>
+            <th>삭제 가능</th>
+            <th>덮어쓰기 가능</th>
+            <th>루트 사용자도 삭제 불가</th>
+            <th>사용 사례</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>거버넌스 모드</strong></td>
+            <td>특별 권한 있는 사용자만</td>
+            <td>불가</td>
+            <td>아니오 (특별 권한으로 우회 가능)</td>
+            <td>내부 보호, 실수 방지</td>
+          </tr>
+          <tr>
+            <td><strong>규정 준수 모드</strong></td>
+            <td>불가 (보존 기간 중)</td>
+            <td>불가</td>
+            <td>예 (루트도 삭제 불가)</td>
+            <td>법적 규정 준수, 감사 데이터</td>
+          </tr>
+          <tr>
+            <td><strong>법적 보존(Legal Hold)</strong></td>
+            <td>해제 전까지 불가</td>
+            <td>불가</td>
+            <td>해제 전까지 불가</td>
+            <td>소송 관련 데이터 보존</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box warning">
+        <div class="info-box-title">Object Lock 활성화 주의사항</div>
+        <p>
+          Object Lock은 <strong>버킷 생성 시에만 활성화</strong>할 수 있습니다.
+          기존 버킷에는 Object Lock을 추가할 수 없으므로,
+          Object Lock이 필요한 경우 새 버킷을 생성한 후 데이터를 마이그레이션해야 합니다.
+          또한 규정 준수 모드로 설정된 객체는 보존 기간이 만료될 때까지
+          <strong>루트 사용자조차 삭제할 수 없으므로</strong> 신중하게 설정해야 합니다.
+        </p>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+        <pre><code># Object Lock이 활성화된 버킷 생성
+aws s3api create-bucket \
+  --bucket shopeasy-compliance-backups \
+  --region ap-northeast-2 \
+  --create-bucket-configuration LocationConstraint=ap-northeast-2 \
+  --object-lock-enabled-for-bucket
+
+# 기본 Object Lock 설정 (거버넌스 모드, 90일 보존)
+aws s3api put-object-lock-configuration \
+  --bucket shopeasy-compliance-backups \
+  --object-lock-configuration '{
+    "ObjectLockEnabled": "Enabled",
+    "Rule": {
+      "DefaultRetention": {
+        "Mode": "GOVERNANCE",
+        "Days": 90
+      }
+    }
+  }'
+
+# 특정 객체에 규정 준수 모드 적용
+aws s3api put-object-retention \
+  --bucket shopeasy-compliance-backups \
+  --key db-backup/2024-01-15.sql.gz \
+  --retention '{
+    "Mode": "COMPLIANCE",
+    "RetainUntilDate": "2025-01-15T00:00:00Z"
+  }'</code></pre>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">ShopEasy 데이터 보호 전략</div>
+        <ul>
+          <li><strong>DB 백업</strong>: 거버넌스 모드 + 90일 보존 (랜섬웨어 방지)</li>
+          <li><strong>결제 로그</strong>: 규정 준수 모드 + 7년 보존 (PCI-DSS 요구사항)</li>
+          <li><strong>상품 이미지</strong>: 버전 관리만 (실수로 삭제 시 복구용)</li>
+          <li><strong>서버 로그</strong>: 버전 관리 + 수명 주기 정책 (90일 후 Glacier로 이동)</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 섹션 7: Pre-signed URL -->
+    <section class="content-section" id="presigned-url">
+      <h2>7. Pre-signed URL 보안 고려사항</h2>
+
+      <p>
+        Pre-signed URL은 S3 객체에 대한 임시 접근을 제공하는 URL입니다.
+        ShopEasy에서는 주문 첨부파일 다운로드나 상품 이미지 업로드 시 활용할 수 있습니다.
+        하지만 잘못 사용하면 보안 위험이 발생할 수 있으므로 주의가 필요합니다.
+      </p>
+
+      <h3>Pre-signed URL 동작 방식</h3>
+
+      <div class="diagram">
+        <div class="diagram-title">Pre-signed URL 발급 및 사용 흐름</div>
+        <div class="diagram-row">
+          <div class="diagram-box user">
+            <div class="box-title">고객</div>
+            <div class="box-sub">다운로드 요청</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box compute">
+            <div class="box-title">EC2 앱 서버</div>
+            <div class="box-sub">Pre-signed URL 생성</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box user">
+            <div class="box-title">고객</div>
+            <div class="box-sub">URL로 직접 다운로드</div>
+          </div>
+          <div class="diagram-arrow">&rarr;</div>
+          <div class="diagram-box storage">
+            <div class="box-title">S3</div>
+            <div class="box-sub">서명 검증 후 응답</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+        <pre><code># Pre-signed URL 생성 (다운로드용, 15분 유효)
+aws s3 presign \
+  s3://shopeasy-order-attachments/orders/12345/receipt.pdf \
+  --expires-in 900
+
+# Node.js에서 Pre-signed URL 생성
+# const { S3Client, GetObjectCommand } = require('@aws-sdk/client-s3');
+# const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+#
+# const url = await getSignedUrl(s3Client,
+#   new GetObjectCommand({
+#     Bucket: 'shopeasy-order-attachments',
+#     Key: 'orders/12345/receipt.pdf'
+#   }),
+#   { expiresIn: 900 }
+# );</code></pre>
+      </div>
+
+      <h3>보안 고려사항</h3>
+
+      <div class="info-box danger">
+        <div class="info-box-title">Pre-signed URL 보안 위험</div>
+        <ul>
+          <li><strong>URL 유출</strong>: Pre-signed URL을 가진 누구나 해당 객체에 접근할 수 있습니다. URL이 유출되면 만료 전까지 접근을 차단할 수 없습니다.</li>
+          <li><strong>긴 만료 시간</strong>: 만료 시간을 너무 길게 설정하면 유출 시 위험이 커집니다. <strong>최소한의 시간만</strong> 부여하세요 (다운로드: 5~15분, 업로드: 30분~1시간).</li>
+          <li><strong>업로드용 URL 악용</strong>: 업로드용 Pre-signed URL이 유출되면 악성 파일이 업로드될 수 있습니다. 반드시 Content-Type, Content-Length 조건을 추가하세요.</li>
+          <li><strong>IAM 자격증명 폐기</strong>: Pre-signed URL을 생성한 IAM 자격증명이 폐기되면 URL도 무효화됩니다. 임시 자격증명(STS)으로 생성 시 세션 만료와 URL 만료를 함께 고려하세요.</li>
+        </ul>
+      </div>
+
+      <div class="info-box best-practice">
+        <div class="info-box-title">Pre-signed URL 모범 사례</div>
+        <p>
+          1. <strong>만료 시간을 최소화</strong>하세요 (다운로드: 5~15분, 업로드: 30분)<br>
+          2. <strong>업로드용 URL에 조건 추가</strong>: Content-Type, Content-Length-Range 제한<br>
+          3. <strong>HTTPS만 사용</strong>: HTTP Pre-signed URL은 데이터 도청 위험<br>
+          4. <strong>서버 측 생성</strong>: 클라이언트에서 직접 생성하지 않고, 서버에서 인증 후 발급<br>
+          5. <strong>로깅 활성화</strong>: S3 서버 액세스 로깅으로 Pre-signed URL 사용 추적
+        </p>
+      </div>
+    </section>
+
+    <!-- 섹션 8: 실습 -->
+    <section class="content-section" id="lab-s3-security">
+      <h2>8. 실습: S3 버킷 보안 강화</h2>
+
+      <div class="lab-section">
+        <div class="lab-title">실습: ShopEasy S3 버킷 보안 강화</div>
+        <div class="steps">
+
+          <div class="step">
+            <div class="step-title">Block Public Access 설정</div>
+            <p>ShopEasy의 모든 S3 버킷에 퍼블릭 액세스 차단을 적용합니다.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># 계정 수준 Block Public Access (모든 버킷에 적용)
+aws s3control put-public-access-block \
+  --account-id $(aws sts get-caller-identity --query Account --output text) \
+  --public-access-block-configuration \
+    BlockPublicAcls=true,\
+    IgnorePublicAcls=true,\
+    BlockPublicPolicy=true,\
+    RestrictPublicBuckets=true
+
+# 각 버킷별 설정 확인
+for BUCKET in shopeasy-product-images shopeasy-order-attachments shopeasy-backups shopeasy-logs; do
+  echo "=== $BUCKET ==="
+  aws s3api get-public-access-block --bucket $BUCKET 2>/dev/null || echo "설정 없음"
+done</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">버전 관리 활성화</div>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># 주문 첨부파일 버킷 - 버전 관리 활성화
+aws s3api put-bucket-versioning \
+  --bucket shopeasy-order-attachments \
+  --versioning-configuration Status=Enabled
+
+# 백업 버킷 - 버전 관리 활성화
+aws s3api put-bucket-versioning \
+  --bucket shopeasy-backups \
+  --versioning-configuration Status=Enabled
+
+# 상태 확인
+aws s3api get-bucket-versioning --bucket shopeasy-order-attachments
+aws s3api get-bucket-versioning --bucket shopeasy-backups</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">SSE-KMS 기본 암호화 적용</div>
+            <p>민감 데이터 버킷에 KMS 암호화를 기본 적용합니다.</p>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># 주문 첨부파일 - SSE-KMS 암호화
+aws s3api put-bucket-encryption \
+  --bucket shopeasy-order-attachments \
+  --server-side-encryption-configuration '{
+    "Rules": [{
+      "ApplyServerSideEncryptionByDefault": {
+        "SSEAlgorithm": "aws:kms",
+        "KMSMasterKeyID": "alias/shopeasy-data-key"
+      },
+      "BucketKeyEnabled": true
+    }]
+  }'
+
+# 백업 - SSE-KMS 암호화
+aws s3api put-bucket-encryption \
+  --bucket shopeasy-backups \
+  --server-side-encryption-configuration '{
+    "Rules": [{
+      "ApplyServerSideEncryptionByDefault": {
+        "SSEAlgorithm": "aws:kms",
+        "KMSMasterKeyID": "alias/shopeasy-data-key"
+      },
+      "BucketKeyEnabled": true
+    }]
+  }'
+
+# 암호화 설정 확인
+aws s3api get-bucket-encryption --bucket shopeasy-order-attachments</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">HTTPS 강제 버킷 정책 적용</div>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># HTTPS 강제 정책 적용
+aws s3api put-bucket-policy \
+  --bucket shopeasy-order-attachments \
+  --policy '{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "DenyNonSSLRequests",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:*",
+        "Resource": [
+          "arn:aws:s3:::shopeasy-order-attachments",
+          "arn:aws:s3:::shopeasy-order-attachments/*"
+        ],
+        "Condition": {
+          "Bool": {
+            "aws:SecureTransport": "false"
+          }
+        }
+      }
+    ]
+  }'</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">S3 서버 액세스 로깅 활성화</div>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code># 액세스 로그 저장용 정책 설정 (로그 버킷)
+aws s3api put-bucket-logging \
+  --bucket shopeasy-order-attachments \
+  --bucket-logging-status '{
+    "LoggingEnabled": {
+      "TargetBucket": "shopeasy-logs",
+      "TargetPrefix": "s3-access-logs/order-attachments/"
+    }
+  }'</code></pre>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-title">보안 설정 종합 확인</div>
+            <div class="code-block">
+              <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
+              <pre><code>#!/bin/bash
+echo "======================================"
+echo " ShopEasy S3 보안 점검"
+echo "======================================"
+
+BUCKET="shopeasy-order-attachments"
+
+echo ""
+echo "[1] Block Public Access"
+aws s3api get-public-access-block --bucket $BUCKET \
+  --query "PublicAccessBlockConfiguration" --output table 2>/dev/null
+
+echo ""
+echo "[2] 암호화 설정"
+aws s3api get-bucket-encryption --bucket $BUCKET \
+  --query "ServerSideEncryptionConfiguration.Rules[0]" --output table 2>/dev/null
+
+echo ""
+echo "[3] 버전 관리"
+aws s3api get-bucket-versioning --bucket $BUCKET --output table
+
+echo ""
+echo "[4] 버킷 정책"
+aws s3api get-bucket-policy --bucket $BUCKET \
+  --query "Policy" --output text 2>/dev/null | python3 -m json.tool
+
+echo ""
+echo "[5] 액세스 로깅"
+aws s3api get-bucket-logging --bucket $BUCKET --output table
+
+echo ""
+echo "======================================"
+echo " 점검 완료"
+echo "======================================"</code></pre>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="info-box tip">
+        <div class="info-box-title">핵심 정리</div>
+        <p>
+          이번 챕터에서 적용한 S3 보안 설정을 정리하면:<br>
+          <strong>접근 제어</strong>: Block Public Access (4가지 모두) + 버킷 정책 (HTTPS 강제, IAM 역할 제한)<br>
+          <strong>데이터 보호</strong>: SSE-KMS 암호화 + 버전 관리 + (필요 시 Object Lock)<br>
+          <strong>감사</strong>: S3 서버 액세스 로깅 + CloudTrail(KMS API 호출 추적)<br><br>
+          다음 챕터에서는 RDS와 DynamoDB의 보안을 다루겠습니다.
+          ShopEasy의 핵심 데이터(고객 정보, 주문 내역)가 저장된 데이터베이스를 보호하는 방법을 배웁니다.
+        </p>
+      </div>
+    </section>
+
+    <div class="chapter-nav">
+      <a href="10-kms-encryption.html" class="prev">이전: KMS & 암호화 기초</a>
+      <a href="12-rds-dynamodb-security.html" class="next">다음: RDS & DynamoDB 보안</a>
+    </div>
+  </main>
+</div>
+
+<script src="../assets/js/main.js"></script>
+</body>
+
+<!-- Mirrored from rapa-aws-security.vercel.app/chapters/11-s3-security.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
+</html>
