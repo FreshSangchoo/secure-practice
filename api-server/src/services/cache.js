@@ -34,15 +34,27 @@ let redisClient = null;
 function getRedisClient() {
   if (!redisClient) {
     const Redis = require('ioredis');
-    redisClient = new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT) || 6379,
+    const host = process.env.REDIS_HOST || 'localhost';
+    const port = parseInt(process.env.REDIS_PORT) || 6379;
+    // AWS ElastiCache Serverless는 TLS 필수 (rediss)
+    const useTls =
+      host.includes('cache.amazonaws.com') || process.env.REDIS_TLS === 'true';
+
+    const options = {
+      host,
+      port,
       retryStrategy(times) {
         // 최대 3번 재시도, 간격 2초
         if (times > 3) return null;
         return 2000;
       },
-    });
+    };
+
+    if (useTls) {
+      options.tls = {};
+    }
+
+    redisClient = new Redis(options);
 
     redisClient.on('connect', () => {
       console.log('[Cache] Redis 연결 성공');
