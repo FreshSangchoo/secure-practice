@@ -1,7 +1,20 @@
+/**
+ * 캐시 서비스 추상화
+ * - memory 모드: 인메모리 Map 사용 (로컬 개발용)
+ * - redis 모드: AWS ElastiCache (Redis) 사용
+ */
+
 const CACHE_TYPE = process.env.CACHE_TYPE || 'memory';
+
+// ========================================
+// 인메모리 캐시 구현
+// ========================================
 
 const memoryCache = new Map();
 
+/**
+ * 만료된 항목 자동 정리 (1분마다)
+ */
 setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of memoryCache) {
@@ -10,6 +23,10 @@ setInterval(() => {
     }
   }
 }, 60 * 1000);
+
+// ========================================
+// Redis 클라이언트
+// ========================================
 
 let redisClient = null;
 
@@ -38,6 +55,7 @@ function getRedisClient() {
     };
 
     if (useTls) {
+      console.log('[Cache] TLS 활성화');
       options.tls = {};
     }
 
@@ -49,6 +67,7 @@ function getRedisClient() {
 
     redisClient.on('ready', async () => {
       console.log('[Cache] Redis ready 상태');
+
       try {
         const pong = await redisClient.ping();
         console.log('[Cache] Redis PING 결과:', pong);
@@ -64,3 +83,59 @@ function getRedisClient() {
 
   return redisClient;
 }
+
+// ========================================
+// 서버 시작 시 Redis 강제 연결
+// ========================================
+
+if (CACHE_TYPE === 'redis') {
+  console.log('[Cache] Redis 모드 활성화');
+  getRedisClient(); // 강제 초기화
+} else {
+  console.log('[Cache] Memory 캐시 모드 활성화');
+}
+
+// ========================================
+// 통합 인터페이스
+// ========================================
+
+async function get(key) {
+  if (CACHE_TYPE === 'redis') {
+    const client = getRedisClient();
+    const value = await client.get(key);
+    return value ? JSON.parse(value) : null;
+  } else {
+    const entry = memoryCache.get(key);
+    if (!entry) return null;
+
+    if (entry.expireAt && entry.expireAt < Date.now()) {
+      memoryCache.delete(key);
+      return null;
+    }
+
+    return entry.value;
+  }
+}
+
+async function set(key, value, ttl = 300) {
+  if (CACHE_TYPE === 'redis') {
+    const client = getRedisClient();
+    await client.set(key, JSON.stringify(value), 'EX', ttl);
+  } else {
+    memoryCache.set(key, {
+      value,
+      expireAt: Date.now() + ttl * 1000,
+    });
+  }
+}
+
+async function del(key) {
+  if (CACHE_TYPE === 'redis') {
+    const client = getRedisClient();
+    await client.del(key);
+  } else {
+    memoryCache.delete(key);
+  }
+}
+
+module.exports = { get, set, del };
