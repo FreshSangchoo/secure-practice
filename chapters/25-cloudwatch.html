@@ -279,7 +279,7 @@ fields @timestamp, @message
               <li><code>DiskReadOps</code> / <code>DiskWriteOps</code> - 디스크 I/O</li>
             </ul>
             <p>여러 메트릭에 체크하여 그래프로 확인합니다. 기간을 1시간, 3시간, 1일로 변경해봅니다.</p>
-            <div class="screenshot-placeholder">CloudWatch EC2 메트릭 그래프 화면</div>
+            <img src="../assets/images/chapter25/check-metrics.png" alt="CloudWatch EC2 메트릭 그래프 화면">
           </li>
 
           <!-- Step 2 -->
@@ -290,10 +290,7 @@ fields @timestamp, @message
             <h4>1) Agent 설치</h4>
             <div class="code-block">
               <div class="code-header"><span class="lang">bash</span><button class="copy-btn">복사</button></div>
-              <pre><code># Amazon Linux 2
-sudo yum install -y amazon-cloudwatch-agent
-
-# Amazon Linux 2023
+              <pre><code># Amazon Linux 2023
 sudo dnf install -y amazon-cloudwatch-agent</code></pre>
             </div>
 
@@ -409,7 +406,7 @@ sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a status<
             </ul> -->
           </li>
 
-          <!-- Step 5 -->
+          <!-- Step 5
           <li class="step">
             <div class="step-title">로그 인사이트로 에러 로그 검색</div>
             <p><strong>CloudWatch</strong> > <strong>Logs</strong> > <strong>Logs Insights</strong>를 클릭합니다.</p>
@@ -445,11 +442,14 @@ sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a status<
 
             <p><strong>Run query</strong>를 클릭하여 결과를 확인합니다.</p>
             <div class="screenshot-placeholder">CloudWatch Logs Insights - 에러 로그 검색 결과</div>
-          </li>
+          </li> -->
 
           <!-- Step 6 -->
           <li class="step">
             <div class="step-title">CPU 경보 생성 (80% 이상 → SNS 알림)</div>
+            
+            <p><strong>(해당 챕터는 과정만 어떤 것들이 있는지 확인하고 실제 생성은 하지 않음)</strong></p>
+            
             <p><strong>CloudWatch</strong> > <strong>Alarms</strong> > <strong>All alarms</strong> > <strong>Create alarm</strong>을 클릭합니다.</p>
 
             <h4>Step 1: 메트릭 선택</h4>
@@ -490,7 +490,7 @@ sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a status<
           </li>
 
           <!-- Step 7 -->
-          <li class="step">
+          <!-- <li class="step">
             <div class="step-title">경보 테스트 (선택)</div>
             <p>경보가 정상 동작하는지 확인하려면, EC2에서 인위적으로 CPU 부하를 생성합니다.</p>
             <div class="code-block">
@@ -516,10 +516,10 @@ aws cloudwatch set-alarm-state \
     --state-value ALARM \
     --state-reason "테스트 경보"</code></pre>
             </div>
-          </li>
+          </li> -->
 
           <!-- Step 8 -->
-          <li class="step">
+          <!-- <li class="step">
             <div class="step-title">이커머스 대시보드 생성</div>
             <p><strong>CloudWatch</strong> > <strong>Dashboards</strong> > <strong>Create dashboard</strong>를 클릭합니다.</p>
             <ul>
@@ -573,10 +573,10 @@ aws cloudwatch set-alarm-state \
 
             <p>위젯들을 드래그하여 배치를 정리하고 <strong>Save dashboard</strong>를 클릭합니다.</p>
             <div class="screenshot-placeholder">ShopEasy 모니터링 대시보드 완성 화면</div>
-          </li>
+          </li> -->
 
           <!-- Step 9 -->
-          <li class="step">
+          <!-- <li class="step">
             <div class="step-title">대시보드 자동 새로고침 설정</div>
             <p>대시보드 상단의 새로고침 아이콘 옆의 드롭다운에서 <strong>Auto refresh</strong>를 활성화합니다.</p>
             <ul>
@@ -589,7 +589,7 @@ aws cloudwatch set-alarm-state \
               <div class="info-box-title">Tip: 대시보드 공유</div>
               <p>대시보드를 팀원들과 공유하려면 <strong>Actions</strong> > <strong>Share dashboard</strong>를 사용합니다. IAM 사용자가 아닌 외부인에게도 공유 가능합니다.</p>
             </div>
-          </li>
+          </li> -->
 
         </ol>
       </div>
