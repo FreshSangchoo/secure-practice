@@ -1,6 +1,3 @@
-/* ========================================
-   Notion-style Annotation System
-   ======================================== */
 import { fsLoad, fsSave, fsDelete } from './firebase.js';
 
 export async function initAnnotations() {
@@ -16,7 +13,6 @@ export async function initAnnotations() {
   const fab     = createFab();
   document.body.append(toolbar, popover, panel, fab);
 
-  /* ---- 유틸 ---- */
   function getPageId() {
     return location.pathname.replace(/[^a-z0-9]/gi, '-');
   }
@@ -24,7 +20,6 @@ export async function initAnnotations() {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  /* ---- 저장/불러오기 ---- */
   async function loadAnnotations() {
     const remote = await fsLoad(pageId);
     if (remote !== null) {
@@ -52,7 +47,6 @@ export async function initAnnotations() {
 
   annotations = await loadAnnotations();
 
-  /* ---- DOM 생성: 툴바 ---- */
   function createToolbar() {
     const t = document.createElement('div');
     t.id = 'annotation-toolbar';
@@ -84,7 +78,6 @@ export async function initAnnotations() {
     return t;
   }
 
-  /* ---- DOM 생성: 팝오버 ---- */
   function createPopover() {
     const p = document.createElement('div');
     p.className = 'note-popover';
@@ -104,7 +97,6 @@ export async function initAnnotations() {
     return p;
   }
 
-  /* ---- DOM 생성: 메모 패널 ---- */
   function createPanel() {
     const p = document.createElement('div');
     p.id = 'notes-panel';
@@ -118,7 +110,6 @@ export async function initAnnotations() {
     return p;
   }
 
-  /* ---- DOM 생성: FAB ---- */
   function createFab() {
     const f = document.createElement('button');
     f.id = 'notes-fab';
@@ -131,7 +122,6 @@ export async function initAnnotations() {
     return f;
   }
 
-  /* ---- 텍스트 선택 감지 ---- */
   document.addEventListener('mouseup', e => {
     if (toolbar.contains(e.target) || popover.contains(e.target)) return;
     setTimeout(() => {
@@ -168,7 +158,6 @@ export async function initAnnotations() {
     closePopover();
   });
 
-  /* ---- 툴바 위치 ---- */
   function positionToolbar(rect) {
     toolbar.classList.add('visible');
     requestAnimationFrame(() => {
@@ -188,7 +177,6 @@ export async function initAnnotations() {
     pending = null;
   }
 
-  /* ---- DOM 조작: 텍스트 노드에 span 삽입 ---- */
   function wrapTextNodes(p, spanClass, annId) {
     const range = document.createRange();
     try {
@@ -245,7 +233,6 @@ export async function initAnnotations() {
     });
   }
 
-  /* ---- 위치 직렬화/역직렬화 ---- */
   function nodeOffsetToAbsolute(root, targetNode, targetOffset) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
     let total = 0, n;
@@ -285,7 +272,6 @@ export async function initAnnotations() {
     return { startNode: start.node, startOffset: start.offset, endNode: end.node, endOffset: end.offset };
   }
 
-  /* ---- 하이라이트 적용 ---- */
   async function applyHighlight(color, withNote) {
     if (!pending) return;
     const snap = pending;
@@ -309,7 +295,6 @@ export async function initAnnotations() {
     renderPanel();
   }
 
-  /* ---- 팝오버 열기/닫기 ---- */
   function openPopover(span) {
     const id  = span.dataset.annId;
     const ann = annotations.find(a => a.id === id);
@@ -333,7 +318,6 @@ export async function initAnnotations() {
     activeAnnotationId = null;
   }
 
-  /* ---- 메모 저장 ---- */
   async function saveNote() {
     if (!activeAnnotationId) return;
     const ann = annotations.find(a => a.id === activeAnnotationId);
@@ -348,7 +332,6 @@ export async function initAnnotations() {
     renderPanel();
   }
 
-  /* ---- 하이라이트 삭제 ---- */
   async function deleteAnnotation() {
     if (!activeAnnotationId) return;
     const id = activeAnnotationId;
@@ -363,7 +346,6 @@ export async function initAnnotations() {
     renderPanel();
   }
 
-  /* ---- 패널 렌더링 ---- */
   function renderPanel() {
     const body = panel.querySelector('.notes-panel-body');
     if (!annotations.length) {
@@ -396,7 +378,6 @@ export async function initAnnotations() {
     });
   }
 
-  /* ---- FAB 배지 ---- */
   function updateBadge() {
     const badge = fab.querySelector('.fab-badge');
     const n = annotations.filter(a => a.note).length;
@@ -404,7 +385,6 @@ export async function initAnnotations() {
     badge.classList.toggle('visible', n > 0);
   }
 
-  /* ---- 복원 ---- */
   function restore() {
     const failed = [];
     annotations.forEach(ann => {

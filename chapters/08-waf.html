@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 
 <!-- Mirrored from rapa-aws-security.vercel.app/chapters/08-waf.html by HTTrack Website Copier/3.x [XR&CO'2014], Thu, 26 Feb 2026 08:26:36 GMT -->
@@ -980,7 +980,7 @@ curl -w "\nHTTP Code: %{http_code}\n" \
 
 # 테스트 5: XSS 공격 시도
 curl -w "\nHTTP Code: %{http_code}\n" \
-  "https://shop.example.com/api/search?q=<script>alert('xss')</script>"
+  "https://shop.example.com/api/search?q=&lt;script&gt;alert('xss')&lt;/script&gt;"
 # 예상: 403 Forbidden</code></pre>
             </div>
           </div>

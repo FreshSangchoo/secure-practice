@@ -1,6 +1,3 @@
-/* ========================================
-   Firebase Firestore 초기화 & CRUD 헬퍼
-   ======================================== */
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
   getFirestore, collection, doc,
