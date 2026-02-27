@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /annotations/{docId} {
+      // 누구나 읽기 가능
+      allow read: if true;
+
+      // 쓰기: 필수 필드 존재 + 크기 제한 (악용 방지)
+      allow create, update: if
+        request.resource.data.keys().hasAll(['id', 'pageId', 'quote']) &&
+        request.resource.data.id is string &&
+        request.resource.data.pageId is string &&
+        request.resource.data.quote is string &&
+        request.resource.data.quote.size() <= 500 &&
+        request.resource.data.size() <= 1024;
+
+      // 삭제는 누구나 가능 (본인 메모 삭제)
+      allow delete: if true;
+    }
+
+    // 그 외 컬렉션은 모두 차단
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
