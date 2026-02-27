@@ -6,15 +6,9 @@ import {
   getFirestore, collection, doc,
   getDocs, setDoc, deleteDoc, query, where,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { firebaseConfig } from './firebase-config.js';
 
-const app = initializeApp({
-  apiKey:            'AIzaSyCqchTnLHC0I4xApiM4ifyXr78T33avUNo',
-  authDomain:        'aws--memo.firebaseapp.com',
-  projectId:         'aws--memo',
-  storageBucket:     'aws--memo.firebasestorage.app',
-  messagingSenderId: '664815808028',
-  appId:             '1:664815808028:web:63a5ff3e11176852c079d9',
-});
+const app = initializeApp(firebaseConfig);
 
 const db = getFirestore(app);
 
