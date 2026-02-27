@@ -272,15 +272,29 @@ export async function initAnnotations() {
     return { startNode: start.node, startOffset: start.offset, endNode: end.node, endOffset: end.offset };
   }
 
+  function rangesOverlap(locA, locB) {
+    return locA.startAbs < locB.endAbs && locA.endAbs > locB.startAbs;
+  }
+
   async function applyHighlight(color, withNote) {
     if (!pending) return;
     const snap = pending;
     pending = null;
     hideToolbar();
 
+    const loc = serializeRange(snap.startNode, snap.startOffset, snap.endNode, snap.endOffset);
+
+    if (loc) {
+      const overlapping = annotations.find(a => a.loc && rangesOverlap(a.loc, loc));
+      if (overlapping) {
+        const existingSpan = document.querySelector(`[data-ann-id="${overlapping.id}"]`);
+        if (existingSpan) openPopover(existingSpan);
+        return;
+      }
+    }
+
     const id  = 'ann-' + Date.now();
     const cls = 'annotated color-' + color;
-    const loc = serializeRange(snap.startNode, snap.startOffset, snap.endNode, snap.endOffset);
 
     const first = wrapTextNodes(snap, cls, id);
     if (!first) return;
