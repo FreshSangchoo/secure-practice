@@ -1,13 +1,15 @@
 /* ========================================
-   AWS 클라우드 보안 강의자료 - 공통 JavaScript
+   AWS 클라우드 보안 강의자료 - 진입점
    ======================================== */
+import { initAnnotations } from './annotations.js';
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   initCopyButtons();
   initSidebarHighlight();
+  await initAnnotations();
 });
 
-/* 코드 블록 복사 버튼 */
+/* ---- 코드 블록 복사 버튼 ---- */
 function initCopyButtons() {
   document.querySelectorAll('.copy-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -24,7 +26,7 @@ function initCopyButtons() {
   });
 }
 
-/* 사이드바 스크롤 하이라이트 */
+/* ---- 사이드바 스크롤 하이라이트 ---- */
 function initSidebarHighlight() {
   const sections = document.querySelectorAll('.content-section[id]');
   const navLinks = document.querySelectorAll('.sidebar-nav a');
