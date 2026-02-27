@@ -1,7 +1,3 @@
-/* ========================================
-   Firebase 설정값 - git에 올리지 않음 (.gitignore)
-   새 키 발급 후 이 파일에만 입력하세요
-   ======================================== */
 export const firebaseConfig = {
   apiKey:            'AIzaSyCqchTnLHC0I4xApiM4ifyXr78T33avUNo',
   authDomain:        'aws--memo.firebaseapp.com',
