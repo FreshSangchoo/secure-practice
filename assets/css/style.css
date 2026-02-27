@@ -719,6 +719,34 @@ tr:hover td { background: var(--bg-alt); }
 .annotated.color-pink   { background: #F8BBD0; }
 .annotated.color-purple { background: #E1BEE7; }
 
+/* 코드 블록(어두운 배경) 안에서는 반투명 밝은 색으로 덮어씀 */
+pre .annotated,
+code .annotated,
+.code-block .annotated {
+  color: #e0e0e0;
+}
+pre .annotated.color-yellow,
+code .annotated.color-yellow,
+.code-block .annotated.color-yellow { background: rgba(249,168,37,0.35); }
+pre .annotated.color-green,
+code .annotated.color-green,
+.code-block .annotated.color-green  { background: rgba(67,160,71,0.35); }
+pre .annotated.color-blue,
+code .annotated.color-blue,
+.code-block .annotated.color-blue   { background: rgba(30,136,229,0.4); }
+pre .annotated.color-pink,
+code .annotated.color-pink,
+.code-block .annotated.color-pink   { background: rgba(233,30,99,0.35); }
+pre .annotated.color-purple,
+code .annotated.color-purple,
+.code-block .annotated.color-purple { background: rgba(142,36,170,0.4); }
+pre .annotated.has-note,
+code .annotated.has-note,
+.code-block .annotated.has-note     { border-bottom: 2px solid rgba(249,168,37,0.8); }
+pre .annotated:hover,
+code .annotated:hover,
+.code-block .annotated:hover        { filter: brightness(1.3); }
+
 @keyframes ann-flash {
   0%   { outline: 3px solid transparent; }
   25%  { outline: 3px solid #F9A825; box-shadow: 0 0 0 4px rgba(249,168,37,0.3); }
