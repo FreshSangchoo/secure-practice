@@ -28,3 +28,11 @@ jobs:
 
       - name: 빌드 확인
         run: echo "빌드 성공!"
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: AWS 설정
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-role
