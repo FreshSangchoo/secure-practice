@@ -36,8 +36,23 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # 4. Docker 이미지 빌드 & Push
+      # 4. 이미지 존재 여부 확인
+      - name: Check if image exists
+        id: check-image
+        env:
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          if aws ecr describe-images --repository-name $ECR_REPOSITORY --image-ids imageTag=$IMAGE_TAG 2>/dev/null; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "이미지가 이미 존재합니다. 빌드를 건너뜁니다."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "새 이미지를 빌드합니다."
+          fi
+
+      # 5. Docker 이미지 빌드 & Push (이미지가 없을 때만)
       - name: Build and push Docker image
+        if: steps.check-image.outputs.exists == 'false'
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
