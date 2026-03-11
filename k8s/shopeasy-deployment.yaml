@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: shopeasy-api
-          image: 660880134783.dkr.ecr.ap-northeast-2.amazonaws.com/shopeasy-api:latest
+          image: 660880134783.dkr.ecr.ap-northeast-2.amazonaws.com/shopeasy-api
           ports:
             - containerPort: 5000
           envFrom:
