@@ -1,0 +1,17 @@
+# k8s/shopeasy-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: shopeasy-service
+  namespace: shopeasy
+  annotations:
+    # LoadBalancer를 퍼블릭 서브넷에 생성 (노드는 프라이빗)
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+spec:
+  type: LoadBalancer
+  selector:
+    app: shopeasy-api
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5000

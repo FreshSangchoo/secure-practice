@@ -1,0 +1,38 @@
+# k8s/shopeasy-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shopeasy-api
+  namespace: shopeasy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: shopeasy-api
+  template:
+    metadata:
+      labels:
+        app: shopeasy-api
+    spec:
+      containers:
+        - name: shopeasy-api
+          image: 660880134783.dkr.ecr.ap-northeast-2.amazonaws.com/shopeasy-api:latest
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: shopeasy-config    # 9개 일반 환경변수 (ConfigMap YAML)
+            - secretRef:
+                name: shopeasy-secret    # 3개 민감 정보 (GitHub Actions에서 자동 생성)
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 5
+            periodSeconds: 5

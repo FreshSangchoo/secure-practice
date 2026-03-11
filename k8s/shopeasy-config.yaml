@@ -1,0 +1,19 @@
+# k8s/shopeasy-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shopeasy-config
+  namespace: shopeasy
+data:
+  # 서버 설정
+  PORT: "5000"
+  # 데이터베이스 (RDS MySQL)
+  DB_TYPE: "mysql"
+  DB_HOST: "docker-db.ct64iess4wif.ap-northeast-2.rds.amazonaws.com"
+  DB_PORT: "3306"
+  DB_NAME: "ecommerce"
+  # 나머지는 로컬 모드 유지
+  STORAGE_TYPE: "local"
+  REVIEW_STORE: "local"
+  CACHE_TYPE: "memory"
+  QUEUE_TYPE: "sync"

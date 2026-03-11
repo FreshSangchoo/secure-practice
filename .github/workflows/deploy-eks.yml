@@ -1,0 +1,82 @@
+name: Deploy to EKS
+
+on:
+  push:
+    branches: [ docker-aws-practice ]
+
+env:
+  AWS_REGION: ap-northeast-2
+  ECR_REPOSITORY: shopeasy-api
+  EKS_CLUSTER_NAME: shop-Cluster
+  K8S_NAMESPACE: shopeasy
+  K8S_DEPLOYMENT: shopeasy-api
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 코드 체크아웃
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. AWS 자격 증명 (OIDC)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # 3. ECR 로그인
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 4. Docker 이미지 빌드 & Push
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      # 5. kubeconfig 업데이트
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name $EKS_CLUSTER_NAME \
+            --region $AWS_REGION
+
+      # 6. EKS 배포 (롤링 업데이트)
+      - name: Deploy to EKS
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          kubectl set image deployment/$K8S_DEPLOYMENT \
+            $K8S_DEPLOYMENT=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            -n $K8S_NAMESPACE
+
+          # 롤아웃 상태 확인 - 모든 Pod가 새 버전으로 교체 완료될 때까지 대기 (최대 5분)
+          kubectl rollout status deployment/$K8S_DEPLOYMENT \
+            -n $K8S_NAMESPACE \
+            --timeout=300s
+
+      # 7. 배포 결과 확인
+      - name: Verify deployment
+        run: |
+          echo "=== Deployment Status ==="
+          kubectl get deployment $K8S_DEPLOYMENT -n $K8S_NAMESPACE
+          echo ""
+          echo "=== Pod Status ==="
+          kubectl get pods -n $K8S_NAMESPACE
+          echo ""
+          echo "=== Service Status ==="
+          kubectl get svc -n $K8S_NAMESPACE

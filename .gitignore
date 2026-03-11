@@ -10,6 +10,8 @@ node_modules/
 .env*
 .env.local
 .env.*.local
+env*
+*env
 
 # ============================================
 # API 서버 - 데이터/업로드
